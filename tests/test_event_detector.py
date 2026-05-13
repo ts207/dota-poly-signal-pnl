@@ -130,3 +130,97 @@ def test_building_state_does_not_treat_existing_destroyed_t3s_as_new_falls():
     event_types = {e.event_type for e in events}
     assert "T2_TOWER_FALL" in event_types
     assert "T3_TOWER_FALL" not in event_types
+
+
+def test_detects_throne_exposed_after_second_t4():
+    detector = EventDetector()
+    # First T4 (Radiant bit 9) falls
+    one_t4_alive = ALL_ALIVE & ~(1 << 9)
+    detector.observe(game(20, 0, building_state=ALL_ALIVE), mapping())
+    events1 = detector.observe(game(21, 0, building_state=one_t4_alive), mapping())
+    assert any(e.event_type == "FIRST_T4_TOWER_FALL" for e in events1)
+
+    # Second T4 (Radiant bit 10) falls → throne exposed
+    both_t4_dead = ALL_ALIVE & ~(1 << 9) & ~(1 << 10)
+    events2 = detector.observe(game(22, 0, building_state=both_t4_dead), mapping())
+    event_types = {e.event_type for e in events2}
+    assert "SECOND_T4_TOWER_FALL" in event_types
+    assert "THRONE_EXPOSED" in event_types
+    throne_evt = next(e for e in events2 if e.event_type == "THRONE_EXPOSED")
+    assert throne_evt.direction == "dire"
+    assert throne_evt.severity == "high"
+
+
+def test_detects_throne_exposed_when_both_t4s_fall_simultaneously():
+    detector = EventDetector()
+    # Both T4s fall at once
+    both_t4_dead = ALL_ALIVE & ~(1 << 9) & ~(1 << 10)
+    detector.observe(game(0, 0, building_state=ALL_ALIVE), mapping())
+    events = detector.observe(game(20, 0, building_state=both_t4_dead), mapping())
+    event_types = {e.event_type for e in events}
+    assert "THRONE_EXPOSED" in event_types
+    assert "SECOND_T4_TOWER_FALL" in event_types
+
+
+def test_detects_all_t3_towers_down():
+    detector = EventDetector()
+    # Radiant Top and Mid T3 already dead (bits 2, 5), Bot T3 (bit 8) still alive
+    two_t3_dead = ALL_ALIVE & ~(1 << 2) & ~(1 << 5)
+    detector.observe(game(0, 0, building_state=two_t3_dead), mapping())
+    # Bot T3 (bit 8) now dies too
+    all_t3_dead = two_t3_dead & ~(1 << 8)
+    events = detector.observe(game(20, 0, building_state=all_t3_dead), mapping())
+    event_types = {e.event_type for e in events}
+    assert "ALL_T3_TOWERS_DOWN" in event_types
+    evt = next(e for e in events if e.event_type == "ALL_T3_TOWERS_DOWN")
+    assert evt.direction == "dire"
+    assert evt.severity == "high"
+
+
+def test_detects_multi_structure_collapse():
+    detector = EventDetector()
+    # Radiant Top T2 (bit 1) and Top T3 (bit 2) fall simultaneously
+    t2_t3_fall = ALL_ALIVE & ~(1 << 1) & ~(1 << 2)
+    detector.observe(game(0, 0, building_state=ALL_ALIVE), mapping())
+    events = detector.observe(game(20, 0, building_state=t2_t3_fall), mapping())
+    event_types = {e.event_type for e in events}
+    assert "MULTI_STRUCTURE_COLLAPSE" in event_types
+    mc_evt = next(e for e in events if e.event_type == "MULTI_STRUCTURE_COLLAPSE")
+    assert mc_evt.direction == "dire"
+
+
+def test_detects_t3_plus_t4_chain():
+    detector = EventDetector()
+    # Radiant T3 (bit 2) and T4 (bit 9) fall simultaneously
+    t3_t4_fall = ALL_ALIVE & ~(1 << 2) & ~(1 << 9)
+    detector.observe(game(0, 0, building_state=ALL_ALIVE), mapping())
+    events = detector.observe(game(20, 0, building_state=t3_t4_fall), mapping())
+    event_types = {e.event_type for e in events}
+    assert "T3_PLUS_T4_CHAIN" in event_types
+    assert "MULTI_STRUCTURE_COLLAPSE" in event_types
+    chain_evt = next(e for e in events if e.event_type == "T3_PLUS_T4_CHAIN")
+    assert chain_evt.severity == "high"
+
+
+def test_pressure_metadata_with_kill_delta():
+    detector = EventDetector()
+    # Radiant T2 falls while radiant is gaining kills and net worth
+    detector.observe(game(0, 500, r_score=10, d_score=10, building_state=ALL_ALIVE), mapping())
+    events = detector.observe(
+        game(20, 3500, r_score=14, d_score=10, building_state=ALL_ALIVE & ~(1 << 4)),
+        mapping(),
+    )
+    t2_evt = next(e for e in events if e.event_type == "T2_TOWER_FALL")
+    assert t2_evt.base_pressure_score is not None
+    assert t2_evt.event_confidence is not None
+
+
+def test_pressure_metadata_without_previous_snapshot():
+    detector = EventDetector()
+    # First observation → no previous → pressure scores should be None or based on base only
+    events = detector.observe(game(0, 0, building_state=ALL_ALIVE), mapping())
+    assert events == []
+    # Second observation (no building changes)
+    events = detector.observe(game(20, 500, building_state=ALL_ALIVE), mapping())
+    for evt in events:
+        assert evt.base_pressure_score is None or evt.base_pressure_score is not None

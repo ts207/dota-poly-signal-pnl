@@ -3,12 +3,13 @@ from __future__ import annotations
 import asyncio
 import traceback
 import aiohttp
+import time
 
 from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
 from signal_engine import EventSignalEngine
 from paper_trader import PaperTrader
-from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger
+from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger
 from mapping import load_valid_mappings
 from event_detector import EventDetector
 from live_executor import LiveExecutor
@@ -89,6 +90,7 @@ async def steam_loop(
     event_logger: DotaEventLogger,
     position_logger: PositionLogger,
     snapshot_logger: RawSnapshotLogger,
+    latency_logger: LatencyLogger,
     live_executor: LiveExecutor | None,
     live_logger: LiveAttemptLogger | None,
     mappings: list[dict],
@@ -221,6 +223,7 @@ async def steam_loop(
                                 signal_engine.record_price(tok, book_mid, game_time)
 
                         dota_events = event_detector.observe(game, mapping)
+                        event_detected_ns = time.time_ns()
                         if dota_events:
                             event_logger.log_events(dota_events)
                             # Final model: score same-direction event clusters once,
@@ -235,6 +238,7 @@ async def steam_loop(
                                 if not event_direction:
                                     continue
 
+                                signal_eval_start_ns = time.time_ns()
                                 signal = signal_engine.evaluate_cluster(
                                     events=cluster_events,
                                     game=game,
@@ -243,6 +247,8 @@ async def steam_loop(
                                     no_book=no_book,
                                     require_primary=not (LIVE_TRADING and ALLOW_CONFIRMATION_ONLY_LIVE_TRADES),
                                 )
+                                signal_evaluated_ns = time.time_ns()
+
                                 if signal.get("reason") == "no_primary_event":
                                     shadow_signal = signal_engine.evaluate_cluster(
                                         events=cluster_events,
@@ -260,6 +266,41 @@ async def steam_loop(
                                 tok_id = signal.get("token_id", "")
                                 tok_side = signal.get("side", "")
                                 event_names = [evt.event_type for evt in cluster_events]
+
+                                # Latency logging
+                                selected_book = (yes_book if tok_id == mapping["yes_token_id"] else no_book) if tok_id else (yes_book or no_book)
+                                latency_row = {
+                                    "match_id": str(game.get("match_id") or ""),
+                                    "market_name": mapping.get("name"),
+                                    "event_type": signal.get("event_type") or "+".join(event_names),
+                                    "cluster_event_types": signal.get("cluster_event_types") or "+".join(event_names),
+                                    "event_direction": event_direction,
+                                    "game_time_sec": game.get("game_time_sec"),
+                                    "data_source": game.get("data_source"),
+                                    "steam_received_at_ns": game.get("received_at_ns"),
+                                    "steam_source_update_age_sec": game.get("source_update_age_sec"),
+                                    "stream_delay_s": game.get("stream_delay_s"),
+                                    "event_detected_ns": event_detected_ns,
+                                    "signal_evaluated_ns": signal_evaluated_ns,
+                                    "token_id": tok_id,
+                                    "side": tok_side,
+                                    "book_received_at_ns": selected_book.get("received_at_ns") if selected_book else None,
+                                    "book_age_at_signal_ms": signal.get("book_age_ms"),
+                                    "best_bid": selected_book.get("best_bid") if selected_book else None,
+                                    "best_ask": selected_book.get("best_ask") if selected_book else None,
+                                    "spread": signal.get("spread"),
+                                    "ask_size": signal.get("ask_size"),
+                                    "decision": signal.get("decision"),
+                                    "skip_reason": signal.get("reason"),
+                                    "fair_price": signal.get("fair_price"),
+                                    "executable_price": signal.get("executable_price"),
+                                    "executable_edge": signal.get("executable_edge"),
+                                    "remaining_move": signal.get("remaining_move"),
+                                    "required_edge": signal.get("required_edge"),
+                                    "lag": signal.get("lag"),
+                                }
+                                latency_logger.log_latency(latency_row)
+
                                 signal_logger.log_signal(
                                     game, mapping, signal,
                                     event_type=signal.get("cluster_event_types") or "+".join(event_names),
@@ -315,6 +356,21 @@ async def steam_loop(
                                         game=game,
                                         book_store=book_store,
                                     )
+                                    # Log live latency result
+                                    live_latency_row = dict(latency_row)
+                                    live_latency_row.update({
+                                        "decision": "live_attempt_result",
+                                        "live_submit_start_ns": attempt.submit_start_ns,
+                                        "live_response_received_ns": attempt.response_received_ns,
+                                        "live_submit_latency_ms": attempt.submit_latency_ms,
+                                        "live_order_status": attempt.order_status,
+                                        "live_reject_reason": attempt.reason_if_rejected,
+                                        "live_submitted_size_usd": attempt.submitted_size_usd,
+                                        "live_filled_size_usd": attempt.filled_size_usd,
+                                        "live_avg_fill_price": attempt.avg_fill_price,
+                                    })
+                                    latency_logger.log_latency(live_latency_row)
+
                                     asyncio.create_task(_log_live_attempt_with_markouts(attempt, book_store, live_logger))
                                     print(
                                         f"LIVE_ATTEMPT {mapping['name']} {tok_side} "
@@ -327,6 +383,7 @@ async def steam_loop(
                                     if attempt.submitted_size_usd > 0:
                                         signal_engine.commit_signal(signal)
                                 else:
+                                    paper_attempt_ns = time.time_ns()
                                     if PAPER_EXECUTION_DELAY_MS > 0:
                                         await asyncio.sleep(PAPER_EXECUTION_DELAY_MS / 1000.0)
 
@@ -339,6 +396,21 @@ async def steam_loop(
                                         market_name=mapping.get("name"),
                                         opposing_token_id=opposing_tok,
                                     )
+                                    paper_fill_ns = time.time_ns()
+
+                                    # Log paper latency result
+                                    paper_latency_row = dict(latency_row)
+                                    paper_latency_row.update({
+                                        "decision": "paper_entry_result",
+                                        "paper_delay_ms": PAPER_EXECUTION_DELAY_MS,
+                                        "paper_attempt_ns": paper_attempt_ns,
+                                        "paper_fill_ns": paper_fill_ns,
+                                        "paper_entry_result": "filled" if pos else "skipped",
+                                        "paper_fill_price": pos.entry_price if pos else None,
+                                        "skip_reason": reason if not pos else None,
+                                    })
+                                    latency_logger.log_latency(paper_latency_row)
+
                                     if pos:
                                         signal_engine.commit_signal(signal)
                                         position_logger.log_entry(pos)
@@ -394,6 +466,7 @@ async def main():
     book_logger = BookEventLogger()
     position_logger = PositionLogger()
     snapshot_logger = RawSnapshotLogger()
+    latency_logger = LatencyLogger()
     live_logger = LiveAttemptLogger() if LIVE_TRADING else None
     live_executor = LiveExecutor() if LIVE_TRADING else None
 
@@ -419,7 +492,7 @@ async def main():
     try:
         await asyncio.gather(
             listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
-            steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, live_executor, live_logger, mappings, asset_ids),
+            steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, mappings, asset_ids),
         )
     except asyncio.CancelledError:
         pass

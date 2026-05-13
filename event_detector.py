@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 from collections import defaultdict, deque
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from typing import Any
 
 from config import (
@@ -44,9 +45,67 @@ CONVERSION_TOWER_EVENTS = frozenset({
     "T2_TOWER_FALL",
     "T3_TOWER_FALL",
     "MULTIPLE_T3_TOWERS_DOWN",
+    "ALL_T3_TOWERS_DOWN",
     "FIRST_T4_TOWER_FALL",
     "SECOND_T4_TOWER_FALL",
+    "THRONE_EXPOSED",
+    "T3_PLUS_T4_CHAIN",
+    "MULTI_STRUCTURE_COLLAPSE",
 })
+
+_EVENT_BASE_PRESSURE: dict[str, float] = {
+    "THRONE_EXPOSED": 1.00,
+    "SECOND_T4_TOWER_FALL": 0.85,
+    "T3_PLUS_T4_CHAIN": 0.80,
+    "MULTI_STRUCTURE_COLLAPSE": 0.70,
+    "ALL_T3_TOWERS_DOWN": 0.65,
+    "FIRST_T4_TOWER_FALL": 0.55,
+    "OBJECTIVE_CONVERSION_T4": 0.90,
+    "OBJECTIVE_CONVERSION_T3": 0.70,
+    "OBJECTIVE_CONVERSION_T2": 0.45,
+    "ULTRA_LATE_WIPE": 0.60,
+    "LATE_GAME_WIPE": 0.50,
+    "STOMP_THROW": 0.55,
+    "MULTIPLE_T3_TOWERS_DOWN": 0.50,
+    "T3_TOWER_FALL": 0.35,
+    "MAJOR_COMEBACK": 0.55,
+    "COMEBACK": 0.35,
+    "EXTREME_LEAD_SWING_30S": 0.50,
+    "KILL_CONFIRMED_LEAD_SWING": 0.40,
+    "LEAD_SWING_60S": 0.25,
+    "LEAD_SWING_30S": 0.20,
+    "KILL_BURST_30S": 0.15,
+    "T2_TOWER_FALL": 0.20,
+    "MULTIPLE_T2_TOWERS_DOWN": 0.30,
+    "ALL_T2_TOWERS_DOWN": 0.35,
+}
+
+_EVENT_CONFIDENCE: dict[str, float] = {
+    "THRONE_EXPOSED": 1.0,
+    "T3_PLUS_T4_CHAIN": 0.85,
+    "MULTI_STRUCTURE_COLLAPSE": 0.75,
+    "ALL_T3_TOWERS_DOWN": 0.80,
+    "OBJECTIVE_CONVERSION_T4": 0.90,
+    "OBJECTIVE_CONVERSION_T3": 0.85,
+    "OBJECTIVE_CONVERSION_T2": 0.75,
+    "SECOND_T4_TOWER_FALL": 0.85,
+    "FIRST_T4_TOWER_FALL": 0.70,
+    "ULTRA_LATE_WIPE": 0.80,
+    "LATE_GAME_WIPE": 0.70,
+    "STOMP_THROW": 0.75,
+    "MULTIPLE_T3_TOWERS_DOWN": 0.65,
+    "T3_TOWER_FALL": 0.50,
+    "MAJOR_COMEBACK": 0.80,
+    "COMEBACK": 0.55,
+    "EXTREME_LEAD_SWING_30S": 0.70,
+    "KILL_CONFIRMED_LEAD_SWING": 0.65,
+    "LEAD_SWING_60S": 0.50,
+    "LEAD_SWING_30S": 0.45,
+    "KILL_BURST_30S": 0.40,
+    "T2_TOWER_FALL": 0.40,
+    "MULTIPLE_T2_TOWERS_DOWN": 0.50,
+    "ALL_T2_TOWERS_DOWN": 0.55,
+}
 
 # 11-bit GetTopLiveGame/tower_state side layout:
 # top T1/T2/T3, mid T1/T2/T3, bot T1/T2/T3, two T4s.
@@ -80,6 +139,11 @@ class DotaEvent:
     yes_team: str | None = None
     yes_token_id: str | None = None
     threshold: int | float | None = None
+    base_pressure_score: float | None = None
+    fight_pressure_score: float | None = None
+    economic_pressure_score: float | None = None
+    conversion_score: float | None = None
+    event_confidence: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -120,6 +184,8 @@ class EventDetector:
         events.extend(self._score_confirmed_events(hist, snapshot, mapping))
         events.extend(self._objective_conversion_events(events, snapshot, mapping))
 
+        events = self._enrich_pressure(events, previous, snapshot)
+
         hist.append(snapshot)
         return events
 
@@ -155,6 +221,84 @@ class EventDetector:
             yes_token_id=(mapping or {}).get("yes_token_id"),
             **kwargs,
         )
+
+    # ------------------------------------------------------------------ #
+    # Pressure metadata enrichment                                       #
+    # ------------------------------------------------------------------ #
+
+    def _enrich_pressure(
+        self,
+        events: list[DotaEvent],
+        previous: dict | None,
+        cur: dict,
+    ) -> list[DotaEvent]:
+        if not events:
+            return events
+
+        fight_delta: int | None = None
+        nw_delta: int | None = None
+        if previous is not None:
+            prev_lead = previous.get("radiant_lead")
+            cur_lead = cur.get("radiant_lead")
+            prev_rs = previous.get("radiant_score")
+            prev_ds = previous.get("dire_score")
+            cur_rs = cur.get("radiant_score")
+            cur_ds = cur.get("dire_score")
+            if prev_lead is not None and cur_lead is not None:
+                nw_delta = cur_lead - prev_lead
+            if prev_rs is not None and prev_ds is not None and cur_rs is not None and cur_ds is not None:
+                fight_delta = (cur_rs - prev_rs) - (cur_ds - prev_ds)
+
+        enriched: list[DotaEvent] = []
+        has_obj_conversion = any(e.event_type.startswith("OBJECTIVE_CONVERSION_") for e in events)
+
+        for evt in events:
+            bp = _EVENT_BASE_PRESSURE.get(evt.event_type, 0.3)
+            conf = _EVENT_CONFIDENCE.get(evt.event_type, 0.5)
+
+            fp: float | None = None
+            ep: float | None = None
+            cs: float | None = None
+
+            if fight_delta is not None and evt.direction is not None:
+                signed = fight_delta if evt.direction == "radiant" else -fight_delta
+                fp = min(max(signed / 5.0, 0.0), 1.0)
+                if signed <= 0:
+                    fp = 0.0
+
+            if nw_delta is not None and evt.direction is not None:
+                signed = nw_delta if evt.direction == "radiant" else -nw_delta
+                ep = min(max(signed / 5000.0, 0.0), 1.0)
+                if signed <= 0:
+                    ep = 0.0
+
+            if fp is not None and ep is not None:
+                if fp > 0 and ep > 0:
+                    cs = min(math.sqrt(fp * ep), 1.0)
+                else:
+                    cs = max(fp, ep) * 0.3
+            elif fp is not None:
+                cs = fp * 0.4 if fp > 0 else None
+            elif ep is not None:
+                cs = ep * 0.4 if ep > 0 else None
+
+            if has_obj_conversion and evt.event_type.startswith("OBJECTIVE_CONVERSION_"):
+                conf = min(conf + 0.12, 1.0)
+            if fp is not None and fp > 0.0:
+                conf = min(conf + 0.08, 1.0)
+            if ep is not None and ep > 0.0:
+                conf = min(conf + 0.08, 1.0)
+
+            enriched.append(replace(
+                evt,
+                base_pressure_score=round(bp, 3),
+                fight_pressure_score=round(fp, 3) if fp is not None else None,
+                economic_pressure_score=round(ep, 3) if ep is not None else None,
+                conversion_score=round(cs, 3) if cs is not None else None,
+                event_confidence=round(min(conf, 1.0), 3),
+            ))
+
+        return enriched
 
     # ------------------------------------------------------------------ #
     # Tower / structure events                                            #
@@ -229,10 +373,22 @@ class EventDetector:
         out: list[DotaEvent] = []
 
         t4_count = _bit_count(fallen_side_bits & T4_MASK)
+        t3_count = _bit_count(fallen_side_bits & T3_MASK)
+        t2_count = _bit_count(fallen_side_bits & T2_MASK)
+
+        tier_types_falling: set[str] = set()
         if t4_count:
-            prev_alive = _bit_count(prev_side_bits & T4_MASK)
-            cur_alive = _bit_count(cur_side_bits & T4_MASK)
-            event_type = "SECOND_T4_TOWER_FALL" if cur_alive == 0 else "FIRST_T4_TOWER_FALL"
+            tier_types_falling.add("t4")
+        if t3_count:
+            tier_types_falling.add("t3")
+        if t2_count:
+            tier_types_falling.add("t2")
+
+        # T4 tier
+        if t4_count:
+            prev_t4_alive = _bit_count(prev_side_bits & T4_MASK)
+            cur_t4_alive = _bit_count(cur_side_bits & T4_MASK)
+            event_type = "SECOND_T4_TOWER_FALL" if cur_t4_alive == 0 else "FIRST_T4_TOWER_FALL"
             if self._cooldown_ok(cur, event_type, direction):
                 out.append(self._base_event(
                     cur, mapping,
@@ -242,8 +398,18 @@ class EventDetector:
                     severity="high",
                 ))
 
-        t3_count = _bit_count(fallen_side_bits & T3_MASK)
+            if cur_t4_alive == 0 and self._cooldown_ok(cur, "THRONE_EXPOSED", direction):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="THRONE_EXPOSED",
+                    previous_value=previous_value, current_value=current_value,
+                    delta=t4_count, window_sec=None, direction=direction,
+                    severity="high",
+                ))
+
+        # T3 tier
         if t3_count:
+            prev_t3_alive = _bit_count(prev_side_bits & T3_MASK)
             cur_t3_alive = _bit_count(cur_side_bits & T3_MASK)
             t3_dead_after = 3 - cur_t3_alive
             event_type = "MULTIPLE_T3_TOWERS_DOWN" if t3_dead_after >= 2 else "T3_TOWER_FALL"
@@ -256,7 +422,16 @@ class EventDetector:
                     severity="high" if event_type == "MULTIPLE_T3_TOWERS_DOWN" else "medium",
                 ))
 
-        t2_count = _bit_count(fallen_side_bits & T2_MASK)
+            if cur_t3_alive == 0 and self._cooldown_ok(cur, "ALL_T3_TOWERS_DOWN", direction):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="ALL_T3_TOWERS_DOWN",
+                    previous_value=previous_value, current_value=current_value,
+                    delta=t3_dead_after, window_sec=None, direction=direction,
+                    severity="high",
+                ))
+
+        # T2 tier
         if t2_count:
             if self._cooldown_ok(cur, "T2_TOWER_FALL", direction):
                 out.append(self._base_event(
@@ -282,6 +457,30 @@ class EventDetector:
                     previous_value=previous_value, current_value=current_value,
                     delta=t2_dead_after, window_sec=None, direction=direction,
                     severity="medium",
+                ))
+
+        # Chain / cascade events: T3 + T4 falling together
+        if "t3" in tier_types_falling and "t4" in tier_types_falling:
+            if self._cooldown_ok(cur, "T3_PLUS_T4_CHAIN", direction):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="T3_PLUS_T4_CHAIN",
+                    previous_value=previous_value, current_value=current_value,
+                    delta=t3_count + t4_count, window_sec=None, direction=direction,
+                    severity="high",
+                ))
+
+        # Multi-structure collapse: 2+ different tier types falling in same update
+        if len(tier_types_falling) >= 2:
+            if self._cooldown_ok(cur, "MULTI_STRUCTURE_COLLAPSE", direction):
+                total_fallen = t2_count + t3_count + t4_count
+                collapse_severity = "high" if len(tier_types_falling) >= 3 else "medium"
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="MULTI_STRUCTURE_COLLAPSE",
+                    previous_value=previous_value, current_value=current_value,
+                    delta=total_fallen, window_sec=None, direction=direction,
+                    severity=collapse_severity,
                 ))
 
         # T1s are intentionally ignored: not part of the final live trade model.
@@ -501,9 +700,13 @@ class EventDetector:
     @staticmethod
     def _conversion_event_type(tower_events: list[DotaEvent]) -> str | None:
         event_types = {e.event_type for e in tower_events}
-        if event_types & {"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"}:
+        if event_types & {"THRONE_EXPOSED", "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL", "T3_PLUS_T4_CHAIN"}:
             return "OBJECTIVE_CONVERSION_T4"
-        if event_types & {"T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN"}:
+        if event_types & {"MULTI_STRUCTURE_COLLAPSE"}:
+            if event_types & {"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL", "THRONE_EXPOSED"}:
+                return "OBJECTIVE_CONVERSION_T4"
+            return "OBJECTIVE_CONVERSION_T3"
+        if event_types & {"ALL_T3_TOWERS_DOWN", "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN"}:
             return "OBJECTIVE_CONVERSION_T3"
         if "T2_TOWER_FALL" in event_types:
             return "OBJECTIVE_CONVERSION_T2"

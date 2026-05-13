@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from typing import Iterable
 
-from config import CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH, LIVE_ATTEMPTS_CSV_PATH
+from config import CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH, LIVE_ATTEMPTS_CSV_PATH, LATENCY_CSV_PATH
 
 RAW_SNAPSHOTS_CSV_PATH = "logs/raw_snapshots.csv"
 
@@ -115,6 +115,42 @@ class SignalLogger(CsvLogger):
             "data_source": signal.get("data_source"),
             "book_age_ms": signal.get("book_age_ms"),
         })
+
+
+class LatencyLogger(CsvLogger):
+    def __init__(self, filename: str = LATENCY_CSV_PATH):
+        super().__init__(filename, [
+            "timestamp_utc", "match_id", "market_name", "event_type", "cluster_event_types",
+            "event_direction", "game_time_sec", "data_source",
+            "steam_received_at_ns", "steam_source_update_age_sec", "stream_delay_s",
+            "event_detected_ns", "signal_evaluated_ns", "event_detection_latency_ms", "signal_eval_latency_ms",
+            "token_id", "side", "book_received_at_ns", "book_age_at_signal_ms",
+            "best_bid", "best_ask", "spread", "ask_size",
+            "decision", "skip_reason", "fair_price", "executable_price", "executable_edge",
+            "remaining_move", "required_edge", "lag",
+            "paper_delay_ms", "paper_attempt_ns", "paper_fill_ns", "paper_entry_result",
+            "paper_fill_price", "paper_entry_latency_ms",
+            "live_submit_start_ns", "live_response_received_ns", "live_submit_latency_ms",
+            "live_order_status", "live_reject_reason", "live_submitted_size_usd",
+            "live_filled_size_usd", "live_avg_fill_price"
+        ])
+
+    def log_latency(self, row: dict):
+        # Compute latencies if ns fields exist
+        try:
+            if row.get("event_detected_ns") and row.get("steam_received_at_ns"):
+                row["event_detection_latency_ms"] = round((row["event_detected_ns"] - row["steam_received_at_ns"]) / 1_000_000, 2)
+            if row.get("signal_evaluated_ns") and row.get("event_detected_ns"):
+                row["signal_eval_latency_ms"] = round((row["signal_evaluated_ns"] - row["event_detected_ns"]) / 1_000_000, 2)
+            if row.get("paper_fill_ns") and row.get("paper_attempt_ns"):
+                row["paper_entry_latency_ms"] = round((row["paper_fill_ns"] - row["paper_attempt_ns"]) / 1_000_000, 2)
+            if row.get("live_response_received_ns") and row.get("live_submit_start_ns"):
+                row["live_submit_latency_ms"] = round((row["live_response_received_ns"] - row["live_submit_start_ns"]) / 1_000_000, 2)
+        except (TypeError, ZeroDivisionError):
+            pass
+        
+        row["timestamp_utc"] = utc_now_iso()
+        self.append(row)
 
 
 class PositionLogger(CsvLogger):

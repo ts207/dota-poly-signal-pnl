@@ -168,6 +168,9 @@ class LiveOrderAttempt:
     match_id: str | None = None
     raw_response_json: str = ""
     created_at_ns: int = 0
+    submit_start_ns: int | None = None
+    response_received_ns: int | None = None
+    submit_latency_ms: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -377,6 +380,7 @@ class LiveExecutor:
             created_at_ns=time.time_ns(),
         )
 
+        attempt.submit_start_ns = time.time_ns()
         try:
             resp = await self.client.buy_fak_market(
                 token_id=token_id,
@@ -385,10 +389,17 @@ class LiveExecutor:
                 tick_size=tick_size,
                 neg_risk=neg_risk,
             )
+            attempt.response_received_ns = time.time_ns()
         except Exception as exc:
+            attempt.response_received_ns = time.time_ns()
             attempt.order_status = "exception"
             attempt.reason_if_rejected = repr(exc)
+            if attempt.submit_start_ns and attempt.response_received_ns:
+                attempt.submit_latency_ms = round((attempt.response_received_ns - attempt.submit_start_ns) / 1_000_000, 2)
             return attempt
+
+        if attempt.submit_start_ns and attempt.response_received_ns:
+            attempt.submit_latency_ms = round((attempt.response_received_ns - attempt.submit_start_ns) / 1_000_000, 2)
 
         attempt.raw_response_json = json.dumps(_jsonable(resp), sort_keys=True)[:4000]
         attempt.order_status = _status_from_response(resp)

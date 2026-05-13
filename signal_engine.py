@@ -36,11 +36,15 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
     "OBJECTIVE_CONVERSION_T3":   EventSpec(0.18, 0.38, 5.0,  "primary"),
     "OBJECTIVE_CONVERSION_T2":   EventSpec(0.075,0.16, 8.0,  "primary"),
 
+    "THRONE_EXPOSED":            EventSpec(0.35, 0.70, 1.5,  "primary"),
     "SECOND_T4_TOWER_FALL":      EventSpec(0.32, 0.65, 2.0,  "primary"),
     "FIRST_T4_TOWER_FALL":       EventSpec(0.22, 0.48, 3.0,  "primary"),
+    "T3_PLUS_T4_CHAIN":          EventSpec(0.28, 0.55, 3.0,  "primary"),
+    "MULTI_STRUCTURE_COLLAPSE":  EventSpec(0.22, 0.45, 4.0,  "primary"),
     "ULTRA_LATE_WIPE":           EventSpec(0.22, 0.48, 4.0,  "primary"),
     "LATE_GAME_WIPE":            EventSpec(0.15, 0.36, 5.0,  "primary"),
     "STOMP_THROW":               EventSpec(0.14, 0.36, 10.0, "primary"),
+    "ALL_T3_TOWERS_DOWN":        EventSpec(0.18, 0.40, 5.0,  "primary"),
     "MULTIPLE_T3_TOWERS_DOWN":   EventSpec(0.15, 0.30, 7.0,  "primary"),
     "T3_TOWER_FALL":             EventSpec(0.09, 0.22, 7.0,  "primary"),
     "MAJOR_COMEBACK":            EventSpec(0.15, 0.32, 18.0, "primary"),
@@ -65,7 +69,12 @@ SUPPRESSIONS: dict[str, set[str]] = {
     "OBJECTIVE_CONVERSION_T3": {"T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN"},
     "OBJECTIVE_CONVERSION_T2": {"T2_TOWER_FALL", "MULTIPLE_T2_TOWERS_DOWN", "ALL_T2_TOWERS_DOWN"},
     "ULTRA_LATE_WIPE": {"LATE_GAME_WIPE", "KILL_BURST_30S"},
+    "THRONE_EXPOSED": {"SECOND_T4_TOWER_FALL", "FIRST_T4_TOWER_FALL"},
     "SECOND_T4_TOWER_FALL": {"FIRST_T4_TOWER_FALL"},
+    "T3_PLUS_T4_CHAIN": {"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL", "THRONE_EXPOSED",
+                          "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN", "ALL_T3_TOWERS_DOWN"},
+    "ALL_T3_TOWERS_DOWN": {"MULTIPLE_T3_TOWERS_DOWN", "T3_TOWER_FALL"},
+    "MULTI_STRUCTURE_COLLAPSE": {"T2_TOWER_FALL", "T3_TOWER_FALL", "FIRST_T4_TOWER_FALL"},
     "MAJOR_COMEBACK": {"COMEBACK"},
     "MULTIPLE_T3_TOWERS_DOWN": {"T3_TOWER_FALL"},
     "ALL_T2_TOWERS_DOWN": {"MULTIPLE_T2_TOWERS_DOWN", "T2_TOWER_FALL"},
@@ -78,11 +87,15 @@ _EVENT_MAX_FILL: dict[str, float] = {
     "OBJECTIVE_CONVERSION_T4": 0.96,
     "OBJECTIVE_CONVERSION_T3": 0.88,
     "OBJECTIVE_CONVERSION_T2": 0.78,
+    "THRONE_EXPOSED": 0.97,
     "SECOND_T4_TOWER_FALL": 0.96,
     "FIRST_T4_TOWER_FALL": 0.93,
+    "T3_PLUS_T4_CHAIN": 0.93,
+    "MULTI_STRUCTURE_COLLAPSE": 0.90,
     "ULTRA_LATE_WIPE": 0.92,
     "LATE_GAME_WIPE": 0.88,
     "STOMP_THROW": 0.88,
+    "ALL_T3_TOWERS_DOWN": 0.87,
     "MULTIPLE_T3_TOWERS_DOWN": 0.85,
     "MAJOR_COMEBACK": 0.85,
     "T3_TOWER_FALL": 0.82,
@@ -599,6 +612,8 @@ class EventSignalEngine:
                 "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL",
                 "OBJECTIVE_CONVERSION_T2", "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T4",
                 "MULTIPLE_T2_TOWERS_DOWN", "ALL_T2_TOWERS_DOWN",
+                "THRONE_EXPOSED", "ALL_T3_TOWERS_DOWN",
+                "T3_PLUS_T4_CHAIN", "MULTI_STRUCTURE_COLLAPSE",
             }:
                 if abs_delta > 1:
                     value *= min(abs_delta, 2.0)
@@ -615,14 +630,22 @@ class EventSignalEngine:
     @staticmethod
     def _state_cap(events: Iterable[Any], game: dict) -> float:
         event_types = {_event_attr(e, "event_type") for e in events}
+        if "THRONE_EXPOSED" in event_types:
+            return 0.70
         if "OBJECTIVE_CONVERSION_T4" in event_types or "SECOND_T4_TOWER_FALL" in event_types:
             return 0.65
+        if "T3_PLUS_T4_CHAIN" in event_types:
+            return 0.55
         if "FIRST_T4_TOWER_FALL" in event_types:
             return 0.50
+        if "MULTI_STRUCTURE_COLLAPSE" in event_types:
+            return 0.45
         if "ULTRA_LATE_WIPE" in event_types:
             return 0.48
         if "OBJECTIVE_CONVERSION_T3" in event_types:
             return 0.42
+        if "ALL_T3_TOWERS_DOWN" in event_types:
+            return 0.40
         if "MULTIPLE_T3_TOWERS_DOWN" in event_types:
             return 0.36
         if "T3_TOWER_FALL" in event_types:
@@ -665,6 +688,8 @@ class EventSignalEngine:
             "T2_TOWER_FALL", "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN",
             "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL",
             "MULTIPLE_T2_TOWERS_DOWN", "ALL_T2_TOWERS_DOWN",
+            "THRONE_EXPOSED", "ALL_T3_TOWERS_DOWN",
+            "T3_PLUS_T4_CHAIN", "MULTI_STRUCTURE_COLLAPSE",
         }
         support = event_types & {
             "COMEBACK", "MAJOR_COMEBACK", "LEAD_SWING_60S", "LEAD_SWING_30S",

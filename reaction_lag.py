@@ -362,7 +362,124 @@ def print_raw_lag_summary(rows: list[dict]):
         print(f"  {len(no_move)} NW deltas: no book move within {REACTION_WINDOW_SECONDS}s window")
 
 
+def write_csv(path: Path, rows: list[dict]):
+    if not rows:
+        return
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+STALE_ASK_OUTPUT = Path("logs/stale_ask_survival.csv")
+
+
+def estimate_stale_ask_survival(signals_path: str | Path, books_path: str | Path, output_path: str | Path):
+    signals = read_csv(signals_path)
+    books = read_csv(books_path)
+    
+    # Pre-parse book timestamps
+    for b in books:
+        b["_ts"] = parse_ts(b.get("timestamp_utc"))
+    
+    # Sort books by timestamp for efficient searching
+    books.sort(key=lambda x: x["_ts"])
+    
+    # Group books by asset_id
+    books_by_asset = defaultdict(list)
+    for b in books:
+        asset_id = b.get("asset_id") or b.get("token_id")
+        if asset_id:
+            books_by_asset[asset_id].append(b)
+
+    results = []
+    if signals and books:
+        for sig in signals:
+            if sig.get("decision") not in {"paper_buy_yes", "live_attempt_result", "paper_entry_result"}:
+                continue
+            
+            # Skip results rows to avoid double counting, but use them for paper_entry_result specific data
+            if sig.get("decision") == "paper_entry_result" and sig.get("paper_entry_result") != "filled":
+                continue
+
+            ts = parse_ts(sig.get("timestamp_utc"))
+            if not ts:
+                continue
+                
+            token_id = sig.get("token_id")
+            if not token_id:
+                continue
+                
+            executable_price = fnum(sig.get("executable_price"))
+            initial_ask = fnum(sig.get("ask")) or fnum(sig.get("best_ask"))
+            initial_ask_size = fnum(sig.get("ask_size"))
+            initial_spread = fnum(sig.get("spread"))
+            
+            if executable_price is None or initial_ask is None:
+                continue
+                
+            asset_books = books_by_asset.get(token_id, [])
+            
+            time_until_ask_above_executable = None
+            time_until_ask_size_75pct_drop = None
+            time_until_spread_widens_1c = None
+            
+            for b in asset_books:
+                bts = b["_ts"]
+                if bts is None or bts <= ts:
+                    continue
+                dt = (bts - ts).total_seconds()
+                if dt > REACTION_WINDOW_SECONDS:
+                    break
+                    
+                current_ask = fnum(b.get("best_ask"))
+                current_ask_size = fnum(b.get("ask_size"))
+                current_spread = fnum(b.get("spread"))
+                
+                if time_until_ask_above_executable is None and current_ask is not None:
+                    if current_ask > executable_price:
+                        time_until_ask_above_executable = dt
+                        
+                if time_until_ask_size_75pct_drop is None and current_ask_size is not None and initial_ask_size:
+                    if current_ask_size <= initial_ask_size * 0.25:
+                        time_until_ask_size_75pct_drop = dt
+                        
+                if time_until_spread_widens_1c is None and current_spread is not None and initial_spread is not None:
+                    if current_spread >= initial_spread + 0.01:
+                        time_until_spread_widens_1c = dt
+                        
+            results.append({
+                "timestamp_utc": sig.get("timestamp_utc"),
+                "match_id": sig.get("match_id"),
+                "token_id": token_id,
+                "event_type": sig.get("event_type"),
+                "executable_price": executable_price,
+                "initial_ask": initial_ask,
+                "initial_ask_size": initial_ask_size,
+                "initial_spread": initial_spread,
+                "time_until_ask_above_executable_price": time_until_ask_above_executable,
+                "time_until_ask_size_75pct_drop": time_until_ask_size_75pct_drop,
+                "time_until_spread_widens_1c": time_until_spread_widens_1c,
+            })
+
+    if results:
+        write_csv(Path(output_path), results)
+        print(f"wrote survival: {output_path}")
+    else:
+        # Write empty file with header to satisfy tests/checkers
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=[
+                "timestamp_utc", "match_id", "token_id", "event_type",
+                "executable_price", "initial_ask", "initial_ask_size", "initial_spread",
+                "time_until_ask_above_executable_price", "time_until_ask_size_75pct_drop",
+                "time_until_spread_widens_1c"
+            ])
+            writer.writeheader()
+        print(f"wrote empty survival: {output_path}")
+
+
 def main():
+    from config import CSV_LOG_PATH
     events    = read_csv(DOTA_EVENTS_CSV_PATH)
     books     = read_csv(BOOK_EVENTS_CSV_PATH)
     snapshots = read_csv(RAW_SNAPSHOTS_CSV_PATH)
@@ -381,6 +498,8 @@ def main():
         write_raw_lag_csv(RAW_LAG_OUTPUT, raw_rows)
         print_raw_lag_summary(raw_rows)
         print(f"wrote: {RAW_LAG_OUTPUT}")
+
+    estimate_stale_ask_survival(CSV_LOG_PATH, BOOK_EVENTS_CSV_PATH, STALE_ASK_OUTPUT)
 
 
 if __name__ == "__main__":

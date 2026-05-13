@@ -167,7 +167,7 @@ markets:
   market_type: MAP_WINNER
   yes_team: Natus Vincere
   no_team: Nigma Galaxy
-  dota_match_id: '8809385333'
+  dota_match_id: '8809381476'
   confidence: 1.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-navi-ngx-2026-05-13

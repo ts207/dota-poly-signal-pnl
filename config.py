@@ -93,6 +93,7 @@ CSV_LOG_PATH = os.getenv("CSV_LOG_PATH", "logs/signals.csv")
 PAPER_TRADES_CSV_PATH = os.getenv("PAPER_TRADES_CSV_PATH", "logs/paper_trades.csv")
 POSITIONS_CSV_PATH = os.getenv("POSITIONS_CSV_PATH", "logs/positions.csv")
 PNL_SUMMARY_CSV_PATH = os.getenv("PNL_SUMMARY_CSV_PATH", "logs/pnl_summary.csv")
+LATENCY_CSV_PATH = os.getenv("LATENCY_CSV_PATH", "logs/latency.csv")
 
 if MODE not in {"paper", "live"}:
     raise RuntimeError("MODE must be paper or live-test compatible live.")
@@ -104,3 +105,5 @@ EVENT_LEAD_SWING_60S = int(os.getenv("EVENT_LEAD_SWING_60S", "3000"))
 EVENT_COOLDOWN_GAME_SECONDS = int(os.getenv("EVENT_COOLDOWN_GAME_SECONDS", "15"))
 REACTION_WINDOW_SECONDS = int(os.getenv("REACTION_WINDOW_SECONDS", "30"))
 BOOK_MOVE_MIN_CENTS = float(os.getenv("BOOK_MOVE_MIN_CENTS", "0.01"))
+REALTIME_STATS_ENABLED = os.getenv("REALTIME_STATS_ENABLED", "false").lower() in {"1", "true", "yes"}
+REALTIME_STATS_STALE_SEC = int(os.getenv("REALTIME_STATS_STALE_SEC", "30"))

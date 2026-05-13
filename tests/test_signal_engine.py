@@ -357,3 +357,51 @@ def test_signal_includes_event_specific_max_fill_price():
     )
     assert result["decision"] == "paper_buy_yes"
     assert result["max_fill_price"] == 0.88
+
+
+def test_throne_exposed_is_active_event():
+    from signal_engine import ACTIVE_EVENTS
+    assert "THRONE_EXPOSED" in ACTIVE_EVENTS
+
+
+def test_throne_exposed_suppresses_second_t4():
+    from signal_engine import apply_suppressions, SUPPRESSIONS
+    assert "SECOND_T4_TOWER_FALL" in SUPPRESSIONS.get("THRONE_EXPOSED", set())
+
+
+def test_throne_exposed_has_higher_state_cap():
+    now_ns = time.time_ns()
+    engine = _engine_with_price(TOKEN_YES, 0.45)
+    result = engine.evaluate(
+        "THRONE_EXPOSED", "radiant", 2,
+        _game(now_ns, game_time_sec=2400), _mapping(), _book(now_ns), None,
+    )
+    assert result["decision"] == "paper_buy_yes"
+    assert result["max_fill_price"] >= 0.96
+
+
+def test_all_t3_towers_down_is_active():
+    from signal_engine import ACTIVE_EVENTS
+    assert "ALL_T3_TOWERS_DOWN" in ACTIVE_EVENTS
+
+
+def test_all_t3_suppresses_t3_tower():
+    from signal_engine import apply_suppressions
+    events = [
+        {"event_type": "T3_TOWER_FALL", "direction": "radiant"},
+        {"event_type": "ALL_T3_TOWERS_DOWN", "direction": "radiant"},
+    ]
+    kept = apply_suppressions(events)
+    kept_types = [e["event_type"] for e in kept]
+    assert "T3_TOWER_FALL" not in kept_types
+    assert "ALL_T3_TOWERS_DOWN" in kept_types
+
+
+def test_t3_plus_t4_chain_is_active():
+    from signal_engine import ACTIVE_EVENTS
+    assert "T3_PLUS_T4_CHAIN" in ACTIVE_EVENTS
+
+
+def test_multi_structure_collapse_is_active():
+    from signal_engine import ACTIVE_EVENTS
+    assert "MULTI_STRUCTURE_COLLAPSE" in ACTIVE_EVENTS
