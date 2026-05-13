@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from team_utils import norm_team
+from series_model import compute_bo3_match_p
 
-SUPPORTED_MARKET_TYPES = {"MAP_WINNER"}
+SUPPORTED_MARKET_TYPES = {"MAP_WINNER", "MATCH_WINNER"}
 PLACEHOLDER_MARKERS = {
     "TOKEN_ID_HERE",
     "MATCH_OR_LOBBY_ID_HERE",
@@ -113,6 +114,25 @@ def validate_mapping_schema(mapping: dict, index: int = 0) -> MappingValidationR
     market_type = str(mapping.get("market_type", "")).upper()
     if market_type not in SUPPORTED_MARKET_TYPES:
         result.mapping_errors.append(f"unsupported market_type={market_type}")
+
+    if market_type == "MATCH_WINNER":
+        mw_required = ["series_type", "current_game_number", "series_score_yes", "series_score_no", "p_next_yes"]
+        mw_missing = [f for f in mw_required if mapping.get(f) is None]
+        if mw_missing:
+            result.mapping_errors.append(f"missing: {', '.join(mw_missing)}")
+        else:
+            try:
+                # Use a dummy p_current_map_yes=0.5 just to trigger state validation in compute_bo3_match_p
+                compute_bo3_match_p(
+                    p_current_map_yes=0.5,
+                    p_next_yes=float(mapping["p_next_yes"]),
+                    series_score_yes=int(mapping["series_score_yes"]),
+                    series_score_no=int(mapping["series_score_no"]),
+                    current_game_number=int(mapping["current_game_number"]),
+                    series_type=int(mapping["series_type"])
+                )
+            except (ValueError, TypeError, KeyError) as e:
+                result.mapping_errors.append(str(e))
 
     if mapping.get("confidence") in (None, ""):
         result.mapping_errors.append("missing confidence")
