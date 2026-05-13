@@ -1,31 +1,17 @@
 #!/usr/bin/env python3
 """
 Builds a labeled evaluation dataset for the dota_fair_model.
-Joins feature logs with external match outcomes and incorporates signal metadata.
+Joins feature logs with external match outcomes and incorporates signal metadata
+using nearest-time joins.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import pandas as pd
 from pathlib import Path
-
-# Paths
-ROOT = Path(__file__).parent.parent
-LOGS_DIR = ROOT / "logs"
-LABELS_DIR = ROOT / "labels"
-LABELS_FILE = LABELS_DIR / "match_results.csv"
-OUTPUT_FILE = LOGS_DIR / "model_eval_dataset.csv"
-COVERAGE_FILE = LOGS_DIR / "model_eval_dataset_coverage.md"
-
-REQUIRED_LOGS = [
-    "liveleague_features.csv",
-    "raw_snapshots.csv",
-    "dota_events.csv",
-    "signals.csv",
-    "book_events.csv"
-]
 
 def get_phase_bucket(game_time_sec: float) -> str:
     minutes = game_time_sec / 60
@@ -36,48 +22,119 @@ def get_phase_bucket(game_time_sec: float) -> str:
     return "40_plus"
 
 def main():
-    print("Building model evaluation dataset...")
+    parser = argparse.ArgumentParser(description="Build labeled evaluation dataset.")
+    parser.add_argument("--labels", default="labels/match_results.csv", help="Path to external labels CSV")
+    parser.add_argument("--logs", default="logs", help="Path to logs directory")
+    parser.add_argument("--output", default="logs/model_eval_dataset.csv", help="Path to output CSV")
+    parser.add_argument("--strict-labels", type=str, default="false", help="If true, refuse to run if any match is unlabeled")
+    args = parser.parse_args()
+
+    strict_labels = args.strict_labels.lower() == "true"
+    labels_file = Path(args.labels)
+    logs_dir = Path(args.logs)
+    output_file = Path(args.output)
+    coverage_file = output_file.with_suffix(".md").parent / (output_file.stem + "_coverage.md")
+
+    print(f"Building model evaluation dataset: {output_file}")
 
     # 1. Verification
-    if not LABELS_FILE.exists():
-        print(f"CRITICAL: {LABELS_FILE} is missing. Refusing to run.")
+    if not labels_file.exists():
+        print(f"CRITICAL: {labels_file} is missing. Refusing to run.")
         sys.exit(1)
 
-    # Load labels
-    labels = pd.read_csv(LABELS_FILE)
+    labels = pd.read_csv(labels_file)
     if "match_id" not in labels.columns or "radiant_win" not in labels.columns:
-        print(f"CRITICAL: {LABELS_FILE} must contain 'match_id' and 'radiant_win'.")
+        print(f"CRITICAL: {labels_file} must contain 'match_id' and 'radiant_win'.")
         sys.exit(1)
     
-    # Ensure match_id is string for joining
     labels["match_id"] = labels["match_id"].astype(str)
     labeled_match_ids = set(labels["match_id"].unique())
 
-    # Load primary features
-    features_path = LOGS_DIR / "liveleague_features.csv"
+    features_path = logs_dir / "liveleague_features.csv"
     if not features_path.exists():
         print(f"CRITICAL: {features_path} missing.")
         sys.exit(1)
     
-    df = pd.read_csv(features_path)
-    df["match_id"] = df["match_id"].astype(str)
+    df_features = pd.read_csv(features_path)
+    df_features["match_id"] = df_features["match_id"].astype(str)
+    input_rows = len(df_features)
     
-    # 2. Refuse if radiant_win is missing for a match present in logs
-    log_match_ids = set(df["match_id"].unique())
-    missing_labels = log_match_ids - labeled_match_ids
-    if missing_labels:
-        print(f"CRITICAL: Missing radiant_win labels for matches: {missing_labels}")
-        print("All matches in logs must have a corresponding label in match_results.csv.")
+    # 2. Labeling Logic
+    log_match_ids = set(df_features["match_id"].unique())
+    unlabeled_matches = log_match_ids - labeled_match_ids
+    
+    if strict_labels and unlabeled_matches:
+        print(f"CRITICAL: Strict mode. Missing labels for: {unlabeled_matches}")
         sys.exit(1)
+    
+    dropped_matches = []
+    if unlabeled_matches:
+        dropped_matches = list(unlabeled_matches)
+        df_features = df_features[~df_features["match_id"].isin(unlabeled_matches)]
+        print(f"Dropped {len(unlabeled_matches)} unlabeled matches.")
 
-    # 3. Join with labels
-    df = df.merge(labels[["match_id", "radiant_win"]], on="match_id", how="inner")
+    df = df_features.merge(labels[["match_id", "radiant_win"]], on="match_id", how="inner")
+    labeled_matches_count = df["match_id"].nunique()
 
-    # 4. Add phase buckets
+    # 3. Nearest-Time Join for Signals
+    signals_path = logs_dir / "signals.csv"
+    if signals_path.exists():
+        signals = pd.read_csv(signals_path)
+        signals["match_id"] = signals["match_id"].astype(str)
+        
+        sig_cols = [
+            "match_id", "game_time_sec", "event_type", "event_tier", 
+            "event_family", "event_quality", "fair_price", 
+            "executable_price", "executable_edge", "decision", "skip_reason"
+        ]
+        available_sig_cols = [c for c in sig_cols if c in signals.columns]
+        df_sig = signals[available_sig_cols].copy()
+        
+        # Suffix signal fields clearly (except match_id and game_time_sec used for merge_asof)
+        rename_map = {c: f"sig_{c}" for c in available_sig_cols if c not in ["match_id", "game_time_sec"]}
+        df_sig.rename(columns=rename_map, inplace=True)
+
+        # merge_asof requires sorted 'on' field
+        df = df.sort_values("game_time_sec")
+        df_sig = df_sig.sort_values("game_time_sec")
+        
+        df = pd.merge_asof(
+            df, 
+            df_sig, 
+            on="game_time_sec", 
+            by="match_id", 
+            tolerance=60, 
+            direction="nearest"
+        )
+
+    # 4. Nearest-Time Join for Latency/Markouts
+    latency_path = logs_dir / "latency.csv"
+    if latency_path.exists():
+        latency = pd.read_csv(latency_path)
+        latency["match_id"] = latency["match_id"].astype(str)
+        
+        lat_cols = ["match_id", "game_time_sec", "markout_3s", "markout_10s", "markout_30s"]
+        available_lat = [c for c in lat_cols if c in latency.columns]
+        df_lat = latency[available_lat].copy()
+        
+        # Suffix markout fields
+        rename_map_lat = {c: f"lat_{c}" for c in available_lat if c not in ["match_id", "game_time_sec"]}
+        df_lat.rename(columns=rename_map_lat, inplace=True)
+
+        df = df.sort_values("game_time_sec")
+        df_lat = df_lat.sort_values("game_time_sec")
+        
+        df = pd.merge_asof(
+            df, 
+            df_lat, 
+            on="game_time_sec", 
+            by="match_id", 
+            tolerance=60, 
+            direction="nearest"
+        )
+
+    # 5. Add phase buckets & NW baseline
     df["phase_bucket"] = df["game_time_sec"].apply(get_phase_bucket)
-
-    # 5. Net-worth baseline
-    # Some logs use 'net_worth_diff', others might need it computed
     if "net_worth_diff" not in df.columns and "radiant_net_worth" in df.columns:
         df["net_worth_diff"] = df["radiant_net_worth"] - df["dire_net_worth"]
     
@@ -85,69 +142,46 @@ def main():
         df["nw_sign_prediction"] = (df["net_worth_diff"] > 0).astype(int)
         df["abs_net_worth_diff"] = df["net_worth_diff"].abs()
 
-    # 6. Join with signals metadata
-    signals_path = LOGS_DIR / "signals.csv"
-    if signals_path.exists():
-        signals = pd.read_csv(signals_path)
-        signals["match_id"] = signals["match_id"].astype(str)
-        # We join on match_id and game_time_sec (nearest match)
-        # For simplicity in this script, we'll do a merge on match_id and game_time_sec
-        # but in reality snapshots might not perfectly align with signal timestamps.
-        # We'll keep the columns as requested.
-        sig_cols = [
-            "match_id", "game_time_sec", "event_type", "event_tier", 
-            "event_family", "event_quality", "fair_price", 
-            "executable_price", "executable_edge", "decision", "skip_reason"
-        ]
-        available_sig_cols = [c for c in sig_cols if c in signals.columns]
-        df = df.merge(signals[available_sig_cols], on=["match_id", "game_time_sec"], how="left")
+    # 6. Final Export
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_file, index=False)
+    print(f"Dataset saved to {output_file}")
 
-    # 7. Market reaction placeholders (Actual computation requires time-series join with book_events)
-    # Since we are building the dataset, we add the columns even if null
-    reaction_cols = ["future_bid_3s", "future_bid_10s", "future_bid_30s", "markout_3s", "markout_10s", "markout_30s"]
-    for col in reaction_cols:
-        if col not in df.columns:
-            df[col] = None
-
-    # Try to extract markouts from latency.csv if it exists
-    latency_path = LOGS_DIR / "latency.csv"
-    if latency_path.exists():
-        latency = pd.read_csv(latency_path)
-        latency["match_id"] = latency["match_id"].astype(str)
-        lat_cols = ["match_id", "game_time_sec", "markout_3s", "markout_10s", "markout_30s"]
-        available_lat = [c for c in lat_cols if c in latency.columns]
-        df = df.merge(latency[available_lat], on=["match_id", "game_time_sec"], how="left", suffixes=('', '_lat'))
-        # Consolidate columns if needed
-        for m in ["markout_3s", "markout_10s", "markout_30s"]:
-            if f"{m}_lat" in df.columns:
-                df[m] = df[m].fillna(df[f"{m}_lat"])
-                df.drop(columns=[f"{m}_lat"], inplace=True)
-
-    # 8. Final Export
-    df.to_csv(OUTPUT_FILE, index=False)
-    print(f"Dataset saved to {OUTPUT_FILE}")
-
-    # Coverage Report
-    with open(COVERAGE_FILE, "w") as f:
+    # 7. Coverage Report
+    with open(coverage_file, "w") as f:
         f.write("# Model Evaluation Dataset Coverage Report\n\n")
-        f.write(f"- **Total Rows**: {len(df)}\n")
-        f.write(f"- **Total Matches**: {df['match_id'].nunique()}\n")
+        f.write(f"- **Input rows**: {input_rows}\n")
+        f.write(f"- **Output rows**: {len(df)}\n")
+        f.write(f"- **Unique matches in logs**: {len(log_match_ids)}\n")
+        f.write(f"- **Labeled matches**: {labeled_matches_count}\n")
+        f.write(f"- **Dropped unlabeled matches**: {len(dropped_matches)}\n")
+        if dropped_matches:
+            f.write(f"  - {', '.join(dropped_matches)}\n")
+        
+        # Coverage calculations
+        event_cov = (df["sig_event_type"].notnull().mean() * 100) if "sig_event_type" in df.columns else 0
+        markout_cov = (df["lat_markout_30s"].notnull().mean() * 100) if "lat_markout_30s" in df.columns else 0
+        
+        f.write(f"- **Event coverage %**: {event_cov:.1f}%\n")
+        f.write(f"- **Markout coverage %**: {markout_cov:.1f}%\n")
+        
         f.write("\n### Phase Distribution\n")
         f.write(df["phase_bucket"].value_counts().to_markdown())
+        
         f.write("\n\n### Label Distribution (radiant_win)\n")
         f.write(df["radiant_win"].value_counts().to_markdown())
-        f.write("\n\n### Signal/Event Coverage\n")
-        if "event_type" in df.columns:
-            f.write(f"- Rows with events: {df['event_type'].notnull().sum()}\n")
-        else:
-            f.write("- Event data: Not available\n")
         
-        f.write("\n### Field Availability\n")
-        avail = df.notnull().mean() * 100
-        f.write(avail.to_markdown())
+        f.write("\n\n### Null-rate Table for Core Model Fields\n")
+        core_fields = [
+            "net_worth_diff", "radiant_score", "dire_score", 
+            "sig_event_type", "sig_fair_price", "lat_markout_30s"
+        ]
+        available_core = [c for c in core_fields if c in df.columns]
+        null_rates = df[available_core].isnull().mean() * 100
+        f.write(null_rates.to_frame("null_rate_%").to_markdown())
         f.write("\n")
 
-    print(f"Coverage report saved to {COVERAGE_FILE}")
+    print(f"Coverage report saved to {coverage_file}")
 
 if __name__ == "__main__":
     main()
