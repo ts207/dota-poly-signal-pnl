@@ -9,6 +9,7 @@ from config import (
     CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH,
     LIVE_ATTEMPTS_CSV_PATH, LATENCY_CSV_PATH, LIVE_LEAGUE_RAW_JSONL_PATH,
     LIVE_LEAGUE_FEATURES_CSV_PATH, SOURCE_DELAY_CSV_PATH,
+    BOOK_REFRESH_RESCUE_CSV_PATH,
     RUN_ID, CODE_VERSION, CONFIG_HASH,
 )
 
@@ -499,3 +500,62 @@ class LiveAttemptLogger(CsvLogger):
         d["markout_10s"] = markouts.get("markout_10s")
         d["markout_30s"] = markouts.get("markout_30s")
         self.append(d)
+
+
+class BookRefreshRescueLogger(CsvLogger):
+    def __init__(self, filename: str = BOOK_REFRESH_RESCUE_CSV_PATH):
+        super().__init__(filename, [
+            "timestamp_utc",
+            "match_id",
+            "event_type",
+            "event_tier",
+            "event_direction",
+            "token_id",
+            "local_book_age_ms",
+            "local_bid",
+            "local_ask",
+            "local_spread",
+            "local_ask_size",
+            "refresh_request_start_ns",
+            "refresh_response_ns",
+            "refresh_latency_ms",
+            "fresh_bid",
+            "fresh_ask",
+            "fresh_spread",
+            "fresh_ask_size",
+            "fresh_book_age_ms_if_available",
+            "local_to_fresh_ask_change",
+            "fresh_executable_edge",
+            "fresh_remaining_move",
+            "fresh_decision",
+            "fresh_skip_reason",
+            "markout_3s",
+            "markout_10s",
+            "markout_30s",
+        ])
+
+    def log_rescue(self, row: dict) -> None:
+        row["timestamp_utc"] = utc_now_iso()
+        self.append(row)
+
+
+class MatchWinnerSignalLogger:
+    def __init__(self, log_dir: str):
+        self.filename = os.path.join(log_dir, "match_winner_signals.csv")
+        self.header = [
+            "timestamp_ns", "match_id", "event_type", "event_direction",
+            "map_token_id", "map_bid", "map_ask", "map_book_age_ms",
+            "match_token_id", "match_bid", "match_ask", "match_book_age_ms",
+            "current_map_p_before", "current_map_p_after",
+            "p_next_yes", "p_next_source", "neutral_p_next_yes",
+            "match_fair_before", "match_fair_after", "match_fair_delta",
+            "match_edge", "decision", "skip_reason"
+        ]
+        if not os.path.exists(self.filename):
+            with open(self.filename, "w") as f:
+                f.write(",".join(self.header) + "\n")
+
+    def log_match_signal(self, row: dict):
+        with open(self.filename, "a") as f:
+            values = [str(row.get(h, "")) for h in self.header]
+            f.write(",".join(values) + "\n")
