@@ -24,10 +24,15 @@ from config import (
     CSV_LOG_PATH,
     PAPER_TRADES_CSV_PATH,
     DOTA_EVENTS_CSV_PATH,
+    BOOK_EVENTS_CSV_PATH,
+    BOOK_REFRESH_RESCUE_CSV_PATH,
+    LIVE_LEAGUE_FEATURES_CSV_PATH,
 )
+from mapping import load_valid_mappings
 
 _FEED_ROWS = 25   # rows shown per feed
 _EXIT_ROWS = 30   # closed positions shown
+_PRICE_ROWS = 40  # prices shown
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +108,138 @@ def _closed_positions(trades: list[dict], n: int) -> list[dict]:
     return list(reversed(exits[-n:]))
 
 
+def _latest_prices() -> list[dict]:
+    book_rows = _read_csv(BOOK_EVENTS_CSV_PATH)
+    if not book_rows:
+        return []
+    valid, _ = load_valid_mappings()
+    token_info: dict[str, dict] = {}
+    for m in valid:
+        name = (m.get("name") or "").replace("Dota 2: ", "")
+        mt = m.get("market_type", "")
+        suffix = " (BO3)" if mt == "MATCH_WINNER" else ""
+        for tid_key in ("yes_token_id", "no_token_id"):
+            tid = str(m.get(tid_key, ""))
+            if tid:
+                side = "YES" if tid_key == "yes_token_id" else "NO"
+                team = m.get("yes_team" if tid_key == "yes_token_id" else "no_team", "")
+                token_info[tid] = {"market": name + suffix, "side": side, "team": team, "mt": mt}
+    latest: dict[str, dict] = {}
+    for r in book_rows:
+        tid = str(r.get("asset_id", ""))
+        if not tid:
+            continue
+        latest[tid] = dict(r)
+        latest[tid]["_info"] = token_info.get(tid, {})
+    rows = []
+    for tid, r in latest.items():
+        info = r.pop("_info", {})
+        if not info:
+            continue
+        rows.append({
+            "market": info.get("market", tid[:12]),
+            "side": info.get("side", "?"),
+            "team": info.get("team", ""),
+            "mt": info.get("mt", ""),
+            "bid": r.get("best_bid", ""),
+            "ask": r.get("best_ask", ""),
+            "mid": r.get("mid", ""),
+            "spread": r.get("spread", ""),
+            "ask_size": r.get("ask_size", ""),
+            "ts": r.get("timestamp_utc", ""),
+        })
+    rows.sort(key=lambda x: (x.get("market", ""), x.get("side", "")))
+    return rows[:_PRICE_ROWS]
+
+
+_TOWER_NAMES = {
+    0: "T1T", 1: "T1M", 2: "T1B",
+    3: "T2T", 4: "T2M", 5: "T2B",
+    6: "T3T", 7: "T3M", 8: "T3B",
+    9: "T4T", 10: "T4B",
+}
+
+def _tower_bits_to_str(state_val) -> str:
+    try:
+        bits = int(float(state_val))
+    except (TypeError, ValueError):
+        return "—"
+    alive = []
+    for bit, name in _TOWER_NAMES.items():
+        if bits & (1 << bit):
+            alive.append(name)
+    return " ".join(alive) if alive else "0"
+
+def _towers_alive(state_val) -> int:
+    try:
+        bits = int(float(state_val))
+    except (TypeError, ValueError):
+        return -1
+    return bin(bits).count("1")
+
+def _live_games() -> list[dict]:
+    feat_rows = _read_csv(LIVE_LEAGUE_FEATURES_CSV_PATH)
+    if not feat_rows:
+        return []
+    by_match: dict[str, dict] = {}
+    for r in feat_rows:
+        mid = r.get("match_id") or r.get("lobby_id") or ""
+        gt = r.get("game_time_sec", "")
+        try:
+            gt_sec = int(float(gt)) if gt else 0
+        except (TypeError, ValueError):
+            gt_sec = 0
+        if gt_sec < 30:
+            continue
+        if mid and mid in by_match:
+            prev_gt = by_match[mid].get("_gt_sec", 0)
+            if gt_sec <= prev_gt:
+                continue
+        r["_gt_sec"] = gt_sec
+        by_match[mid] = r
+    games = []
+    for mid, r in by_match.items():
+        r_net = r.get("radiant_net_worth", "0")
+        d_net = r.get("dire_net_worth", "0")
+        try:
+            rn = int(float(r_net)) if r_net else 0
+        except (TypeError, ValueError):
+            rn = 0
+        try:
+            dn = int(float(d_net)) if d_net else 0
+        except (TypeError, ValueError):
+            dn = 0
+        nw_diff = rn - dn
+        r_towers = _towers_alive(r.get("radiant_tower_state", "0"))
+        d_towers = _towers_alive(r.get("dire_tower_state", "0"))
+        r_tower_detail = _tower_bits_to_str(r.get("radiant_tower_state", "0"))
+        d_tower_detail = _tower_bits_to_str(r.get("dire_tower_state", "0"))
+        r_score = r.get("radiant_score", "0")
+        d_score = r.get("dire_score", "0")
+        series_type = r.get("series_type", "")
+        series_id = r.get("series_id", "")
+        games.append({
+            "match_id": mid,
+            "radiant_team": r.get("radiant_team", "Radiant"),
+            "dire_team": r.get("dire_team", "Dire"),
+            "game_time_sec": r.get("game_time_sec", ""),
+            "radiant_score": r_score,
+            "dire_score": d_score,
+            "radiant_net_worth": rn,
+            "dire_net_worth": dn,
+            "net_worth_diff": nw_diff,
+            "radiant_towers": r_towers,
+            "dire_towers": d_towers,
+            "radiant_tower_detail": r_tower_detail,
+            "dire_tower_detail": d_tower_detail,
+            "series_type": series_type,
+            "series_id": series_id,
+            "timestamp_utc": r.get("timestamp_utc", ""),
+        })
+    games.sort(key=lambda g: g.get("timestamp_utc", ""), reverse=True)
+    return games
+
+
 # ---------------------------------------------------------------------------
 # API endpoint
 # ---------------------------------------------------------------------------
@@ -111,6 +248,9 @@ async def _api_data(_request: web.Request) -> web.Response:
     trades  = _read_csv(PAPER_TRADES_CSV_PATH)
     signals = list(reversed(_read_csv(CSV_LOG_PATH)[-_FEED_ROWS:]))
     events  = list(reversed(_read_csv(DOTA_EVENTS_CSV_PATH)[-_FEED_ROWS:]))
+    prices  = _latest_prices()
+    rescue = list(reversed(_read_csv(BOOK_REFRESH_RESCUE_CSV_PATH)[-_FEED_ROWS:]))
+    match_winner = list(reversed(_read_csv(MATCH_WINNER_CSV_PATH)[-_FEED_ROWS:]))
 
     payload = {
         "ts":               datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -119,6 +259,10 @@ async def _api_data(_request: web.Request) -> web.Response:
         "closed_positions": _closed_positions(trades, _EXIT_ROWS),
         "signals":          signals,
         "events":           events,
+        "prices":           prices,
+        "rescue":           rescue,
+        "match_winner":     match_winner,
+        "games":            _live_games(),
     }
     return web.Response(
         text=json.dumps(payload, default=str),
@@ -359,6 +503,15 @@ tr:hover td { background: rgba(255,255,255,.018); }
 .exits-wrap::-webkit-scrollbar { width: 3px; }
 .exits-wrap::-webkit-scrollbar-track { background: transparent; }
 .exits-wrap::-webkit-scrollbar-thumb { background: var(--bd2); }
+
+/* ── GAME STATE ────────────────────────────────────────────── */
+.gs-bar {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 10px;
+}
+.gs-bar .g { color: var(--green); }
+.gs-bar .r { color: var(--red); }
+.gs-bar .au { color: var(--gold); }
 </style>
 </head>
 <body>
@@ -403,6 +556,23 @@ tr:hover td { background: rgba(255,255,255,.018); }
     </div>
   </div>
 
+  <!-- Live Games -->
+  <div>
+    <div class="sec-hdr">
+      <div class="sec-lbl">Live Games</div>
+      <div class="sec-cnt" id="games-cnt">0</div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Radiant</th><th>Dire</th><th>Game Time</th>
+          <th>Score</th><th>NW Lead</th><th>R Towers</th><th>D Towers</th><th>Updated</th>
+        </tr></thead>
+        <tbody id="games-body"><tr class="empty-row"><td colspan="8">no live games</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Open positions -->
   <div>
     <div class="sec-hdr">
@@ -430,6 +600,43 @@ tr:hover td { background: rgba(255,255,255,.018); }
     <div class="feed">
       <div class="feed-hdr">Dota Event Feed</div>
       <div class="feed-body" id="evt-feed"><div class="feed-empty">no events detected</div></div>
+    </div>
+  </div>
+
+  <!-- Rescue Log -->
+  <div>
+    <div class="sec-hdr">
+      <div class="sec-lbl">Book Refresh Rescue</div>
+      <div class="sec-cnt" id="rescue-cnt">0</div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Time</th><th>Event</th><th>Tier</th><th>Local Age</th>
+          <th>Fresh Ask</th><th>Local Ask</th><th>&Delta;Ask</th>
+          <th>Fresh Edge</th><th>Fresh Decision</th><th>Latency</th>
+        </tr></thead>
+        <tbody id="rescue-body"><tr class="empty-row"><td colspan="10">no rescue attempts</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Live Prices -->
+  <div>
+    <div class="sec-hdr">
+      <div class="sec-lbl">Live Prices</div>
+      <div class="sec-cnt" id="price-cnt">0</div>
+    </div>
+    <div class="tbl-wrap">
+      <div class="exits-wrap">
+        <table>
+          <thead><tr>
+            <th>Market</th><th>Side</th><th>Team</th>
+            <th>Bid</th><th>Ask</th><th>Mid</th><th>Spread</th><th>Ask Size</th><th>Updated</th>
+          </tr></thead>
+          <tbody id="price-body"><tr class="empty-row"><td colspan="9">no price data</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -611,6 +818,31 @@ async function refresh() {
   $('kpi-open').textContent    = oc;
   $('kpi-open-sub').textContent = oc ? oc + ' active' : 'none active';
 
+  // ── Live Games ──────────────────────────────────────────────
+  const games = d.games || [];
+  $('games-cnt').textContent = games.length;
+  if (!games.length) {
+    $('games-body').innerHTML = '<tr class="empty-row"><td colspan="8">no live games</td></tr>';
+  } else {
+    $('games-body').innerHTML = games.map(g => {
+      const nw = parseInt(g.net_worth_diff) || 0;
+      const nwCls = nw > 0 ? 'g' : nw < 0 ? 'r' : 'mid';
+      const nwStr = nw > 0 ? `R +${(nw/1000).toFixed(1)}k` : nw < 0 ? `D +${(-nw/1000).toFixed(1)}k` : 'even';
+      const rT = g.radiant_towers >= 0 ? g.radiant_towers : '—';
+      const dT = g.dire_towers >= 0 ? g.dire_towers : '—';
+      return `<tr>
+        <td>${g.radiant_team}</td>
+        <td>${g.dire_team}</td>
+        <td class="dim">${fmtGT(g.game_time_sec)}</td>
+        <td><span class="${parseInt(g.radiant_score)>=parseInt(g.dire_score)?'g':'r'}">${g.radiant_score}</span>-<span class="${parseInt(g.dire_score)>=parseInt(g.radiant_score)?'g':'r'}">${g.dire_score}</span></td>
+        <td class="${nwCls}">${nwStr}</td>
+        <td title="${g.radiant_tower_detail || ''}">${rT}</td>
+        <td title="${g.dire_tower_detail || ''}">${dT}</td>
+        <td class="dim">${fmtTimeUTC(g.timestamp_utc)}</td>
+      </tr>`;
+    }).join('');
+  }
+
   // ── Open positions ────────────────────────────────────────
   $('open-cnt').textContent = d.open_positions.length;
   if (!d.open_positions.length) {
@@ -672,6 +904,79 @@ async function refresh() {
         </div>
         <div class="fi-detail">${teams}${delta} · gt=${fmtGT(e.game_time_sec)}</div>
       </div>`;
+    }).join('');
+  }
+
+  // ── Rescue ──────────────────────────────────────────────────
+  $('rescue-cnt').textContent = (d.rescue||[]).length;
+  if (!(d.rescue||[]).length) {
+    $('rescue-body').innerHTML = '<tr class="empty-row"><td colspan="10">no rescue attempts</td></tr>';
+  } else {
+    $('rescue-body').innerHTML = d.rescue.map(r => {
+      const delta = r.local_to_fresh_ask_change != null ? parseFloat(r.local_to_fresh_ask_change) : null;
+      const deltaStr = delta != null ? `<span class="${delta>=0?'g':'r'}">${delta>=0?'+':''}${delta.toFixed(4)}</span>` : '—';
+      return `<tr>
+        <td class="dim">${fmtTimeUTC(r.timestamp_utc)}</td>
+        <td>${evtTag(r.event_type)}</td>
+        <td>${r.event_tier||'—'}</td>
+        <td class="dim">${r.local_book_age_ms?parseInt(r.local_book_age_ms).toLocaleString()+'ms':'—'}</td>
+        <td>${fmtPrice(r.fresh_ask)}</td>
+        <td>${fmtPrice(r.local_ask)}</td>
+        <td>${deltaStr}</td>
+        <td>${fmtPrice(r.fresh_executable_edge)}</td>
+        <td>${(r.fresh_decision||'—').slice(0,14)}</td>
+        <td class="dim">${r.refresh_latency_ms?parseInt(r.refresh_latency_ms)+'ms':'—'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── MATCH_WINNER Research ───────────────────────────────────
+  $('mw-cnt').textContent = (d.match_winner||[]).length;
+  if (!(d.match_winner||[]).length) {
+    $('mw-body').innerHTML = '<tr class="empty-row"><td colspan="8">no match winner signals</td></tr>';
+  } else {
+    $('mw-body').innerHTML = d.match_winner.map(s => {
+      const ts = fmtTimeUTC(s.timestamp_utc);
+      const mkt = shortMarket(s.market_name) || '—';
+      const evt = evtTag(s.event_type);
+      const mapFairDelta = s.map_fair_delta != null ? parseFloat(s.map_fair_delta).toFixed(4) : '—';
+      const seriesFairDelta = s.series_fair_delta != null ? parseFloat(s.series_fair_delta).toFixed(4) : '—';
+      const neutral = s.neutral_series_fair != null ? parseFloat(s.neutral_series_fair).toFixed(4) : '—';
+      const ask = s.match_ask != null ? parseFloat(s.match_ask).toFixed(4) : '—';
+      const edge = s.executable_edge != null ? parseFloat(s.executable_edge).toFixed(4) : '—';
+      return `<tr>
+        <td class="dim">${ts}</td>
+        <td title="${s.market_name||''}">${mkt}</td>
+        <td>${evt}</td>
+        <td>${mapFairDelta}</td>
+        <td>${seriesFairDelta}</td>
+        <td>${neutral}</td>
+        <td>${ask}</td>
+        <td>${edge}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Prices ──────────────────────────────────────────────────
+  $('price-cnt').textContent = (d.prices||[]).length;
+  if (!(d.prices||[]).length) {
+    $('price-body').innerHTML = '<tr class="empty-row"><td colspan="9">no price data</td></tr>';
+  } else {
+    $('price-body').innerHTML = d.prices.map(p => {
+      const sp = p.spread != null ? parseFloat(p.spread) : null;
+      const spStr = sp != null ? (sp*100).toFixed(1)+'¢' : '—';
+      const sz = p.ask_size != null ? '$'+parseFloat(p.ask_size).toFixed(0) : '—';
+      return `<tr>
+        <td title="${p.market||''}">${(p.market||'').slice(0,35)}</td>
+        <td><span class="${p.side==='YES'?'g':'au'}">${p.side||'—'}</span></td>
+        <td>${p.team||'—'}</td>
+        <td class="mid">${fmtPrice(p.bid)}</td>
+        <td class="mid">${fmtPrice(p.ask)}</td>
+        <td class="au">${fmtPrice(p.mid)}</td>
+        <td>${spStr}</td>
+        <td class="dim">${sz}</td>
+        <td class="dim">${fmtTimeUTC(p.ts)}</td>
+      </tr>`;
     }).join('');
   }
 
