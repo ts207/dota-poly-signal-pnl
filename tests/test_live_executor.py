@@ -192,3 +192,43 @@ async def test_live_executor_rejects_tier_c_by_default(monkeypatch):
     )
     assert attempt.order_status == "rejected_precheck"
     assert attempt.reason_if_rejected == "confirmation_only_event"
+
+
+@pytest.mark.asyncio
+async def test_live_executor_rejects_priced_objective_conversion_t3_without_large_edge(monkeypatch):
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"OBJECTIVE_CONVERSION_T3"})
+    executor = LiveExecutor(client=FakeLiveClient())
+    sig = _signal(
+        event_type="OBJECTIVE_CONVERSION_T3",
+        cluster_event_types="OBJECTIVE_CONVERSION_T3",
+        ask=0.87,
+        fair_price=0.93,
+        executable_edge=0.06,
+        lag=0.08,
+        max_fill_price=0.90,
+    )
+    attempt = await executor.try_buy(
+        signal=sig, mapping=_mapping(), game=_game(), book_store=_book_store(ask=0.87, bid=0.85)
+    )
+    assert attempt.order_status == "rejected_precheck"
+    assert attempt.reason_if_rejected == "objective_conversion_t3_requires_8c_edge_above_85c"
+
+
+@pytest.mark.asyncio
+async def test_live_executor_rejects_terminal_price_chasing_before_submit(monkeypatch):
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"OBJECTIVE_CONVERSION_T4"})
+    executor = LiveExecutor(client=FakeLiveClient())
+    sig = _signal(
+        event_type="OBJECTIVE_CONVERSION_T4",
+        cluster_event_types="OBJECTIVE_CONVERSION_T4",
+        ask=0.96,
+        fair_price=0.99,
+        executable_edge=0.10,
+        lag=0.08,
+        max_fill_price=0.98,
+    )
+    attempt = await executor.try_buy(
+        signal=sig, mapping=_mapping(), game=_game(), book_store=_book_store(ask=0.96, bid=0.94)
+    )
+    assert attempt.order_status == "rejected_precheck"
+    assert attempt.reason_if_rejected == "chasing_terminal_price"

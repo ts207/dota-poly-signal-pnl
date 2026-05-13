@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from team_utils import norm_team
-from event_taxonomy import TIER_A_EVENTS, TIER_B_EVENTS, TIER_C_EVENTS, event_is_primary, event_tier
+from event_taxonomy import TIER_A_EVENTS, TIER_B_EVENTS, event_family, event_is_primary, event_tier
 
 from config import (
     MAX_STEAM_AGE_MS, MAX_SOURCE_UPDATE_AGE_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS,
@@ -43,8 +43,13 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
     "T3_PLUS_T4_CHAIN":          EventSpec(0.28, 0.55, 3.0,  "primary"),
     "MULTI_STRUCTURE_COLLAPSE":  EventSpec(0.22, 0.45, 4.0,  "primary"),
     "ULTRA_LATE_WIPE":           EventSpec(0.22, 0.48, 4.0,  "primary"),
+    "ULTRA_LATE_WIPE_CONFIRMED": EventSpec(0.24, 0.52, 4.0,  "primary"),
     "LATE_GAME_WIPE":            EventSpec(0.15, 0.36, 5.0,  "primary"),
     "STOMP_THROW":               EventSpec(0.14, 0.36, 10.0, "primary"),
+    "STOMP_THROW_WITH_OBJECTIVE_RISK": EventSpec(0.18, 0.40, 8.0, "primary"),
+    "LATE_MAJOR_COMEBACK_REPRICE": EventSpec(0.16, 0.36, 8.0, "primary"),
+    "CHAINED_LATE_FIGHT_RECOVERY": EventSpec(0.14, 0.32, 8.0, "primary"),
+    "LATE_ECONOMIC_CRASH":       EventSpec(0.13, 0.30, 8.0,  "primary"),
     "ALL_T3_TOWERS_DOWN":        EventSpec(0.18, 0.40, 5.0,  "primary"),
     "MULTIPLE_T3_TOWERS_DOWN":   EventSpec(0.15, 0.30, 7.0,  "primary"),
     "T3_TOWER_FALL":             EventSpec(0.09, 0.22, 7.0,  "primary"),
@@ -58,6 +63,7 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
     # Confirmation / lower-confidence events. main.py uses cluster scoring and
     "T2_TOWER_FALL":             EventSpec(0.035, 0.08, 10.0, "confirmation"),
     "COMEBACK":                  EventSpec(0.040, 0.12, 12.0, "confirmation"),
+    "FIGHT_TO_GOLD_CONFIRM_30S": EventSpec(0.050, 0.12, 6.0, "confirmation"),
     # Map-control context only: useful as support for sizing/edge, not a standalone live trigger.
     "MULTIPLE_T2_TOWERS_DOWN":   EventSpec(0.035, 0.08, 12.0, "confirmation"),
     "ALL_T2_TOWERS_DOWN":        EventSpec(0.050, 0.12, 15.0, "confirmation"),
@@ -77,6 +83,12 @@ SUPPRESSIONS: dict[str, set[str]] = {
     "ALL_T3_TOWERS_DOWN": {"MULTIPLE_T3_TOWERS_DOWN", "T3_TOWER_FALL"},
     "MULTI_STRUCTURE_COLLAPSE": {"T2_TOWER_FALL", "T3_TOWER_FALL", "FIRST_T4_TOWER_FALL"},
     "MAJOR_COMEBACK": {"COMEBACK"},
+    "LATE_MAJOR_COMEBACK_REPRICE": {"MAJOR_COMEBACK", "COMEBACK", "LEAD_SWING_60S"},
+    "CHAINED_LATE_FIGHT_RECOVERY": {"KILL_CONFIRMED_LEAD_SWING", "LEAD_SWING_60S", "KILL_BURST_30S"},
+    "LATE_ECONOMIC_CRASH": {"LEAD_SWING_60S", "LEAD_SWING_30S", "EXTREME_LEAD_SWING_30S"},
+    "ULTRA_LATE_WIPE_CONFIRMED": {"ULTRA_LATE_WIPE", "LATE_GAME_WIPE", "KILL_BURST_30S"},
+    "STOMP_THROW_WITH_OBJECTIVE_RISK": {"STOMP_THROW", "KILL_BURST_30S"},
+    "FIGHT_TO_GOLD_CONFIRM_30S": {"KILL_CONFIRMED_LEAD_SWING", "KILL_BURST_30S"},
     "MULTIPLE_T3_TOWERS_DOWN": {"T3_TOWER_FALL"},
     "ALL_T2_TOWERS_DOWN": {"MULTIPLE_T2_TOWERS_DOWN", "T2_TOWER_FALL"},
     "MULTIPLE_T2_TOWERS_DOWN": {"T2_TOWER_FALL"},
@@ -94,11 +106,17 @@ _EVENT_MAX_FILL: dict[str, float] = {
     "T3_PLUS_T4_CHAIN": 0.93,
     "MULTI_STRUCTURE_COLLAPSE": 0.90,
     "ULTRA_LATE_WIPE": 0.92,
+    "ULTRA_LATE_WIPE_CONFIRMED": 0.88,
     "LATE_GAME_WIPE": 0.88,
     "STOMP_THROW": 0.88,
+    "STOMP_THROW_WITH_OBJECTIVE_RISK": 0.80,
+    "LATE_MAJOR_COMEBACK_REPRICE": 0.70,
+    "CHAINED_LATE_FIGHT_RECOVERY": 0.75,
+    "LATE_ECONOMIC_CRASH": 0.75,
     "ALL_T3_TOWERS_DOWN": 0.87,
     "MULTIPLE_T3_TOWERS_DOWN": 0.85,
     "MAJOR_COMEBACK": 0.85,
+    "FIGHT_TO_GOLD_CONFIRM_30S": 0.80,
     "T3_TOWER_FALL": 0.82,
 }
 
@@ -190,6 +208,47 @@ def _event_attr(event: Any, key: str, default: Any = None) -> Any:
     if isinstance(event, dict):
         return event.get(key, default)
     return getattr(event, key, default)
+
+
+def _event_quality_score(events: Iterable[Any]) -> float:
+    scores: list[float] = []
+    for event in events:
+        explicit = _event_attr(event, "event_quality")
+        if explicit is not None:
+            try:
+                scores.append(float(explicit))
+                continue
+            except (TypeError, ValueError):
+                pass
+        base = float(_event_attr(event, "base_pressure_score", 0.0) or 0.0)
+        conversion = float(_event_attr(event, "conversion_score", 0.0) or 0.0)
+        fight = float(_event_attr(event, "fight_pressure_score", 0.0) or 0.0)
+        economy = float(_event_attr(event, "economic_pressure_score", 0.0) or 0.0)
+        scores.append((0.35 * base) + (0.25 * conversion) + (0.20 * fight) + (0.20 * economy))
+    return round(max(scores, default=0.0), 4)
+
+
+def _execution_quality_scores(book_age: int, spread: float | None, ask: float, ask_size: Any) -> dict[str, float]:
+    book_freshness_score = max(0.0, min(1.0, 1.0 - (book_age / max(MAX_BOOK_AGE_MS, 1))))
+    spread_score = 0.6 if spread is None else max(0.0, min(1.0, 1.0 - (spread / max(MAX_SPREAD, 0.0001))))
+    notional = None
+    try:
+        if ask_size is not None:
+            notional = ask * float(ask_size)
+    except (TypeError, ValueError):
+        notional = None
+    size_score = 0.6 if notional is None else max(0.0, min(1.0, notional / max(MIN_ASK_SIZE_USD, 0.01)))
+    price_not_chased_score = 0.0 if ask >= 0.97 else (0.25 if ask >= 0.95 else (0.65 if ask >= 0.90 else 1.0))
+    execution_quality = book_freshness_score * spread_score * size_score * price_not_chased_score
+    price_quality = spread_score * price_not_chased_score
+    return {
+        "book_freshness_score": round(book_freshness_score, 4),
+        "spread_score": round(spread_score, 4),
+        "size_score": round(size_score, 4),
+        "price_not_chased_score": round(price_not_chased_score, 4),
+        "price_quality_score": round(price_quality, 4),
+        "execution_quality_score": round(execution_quality, 4),
+    }
 
 
 def apply_suppressions(events: Iterable[Any]) -> list[Any]:
@@ -435,22 +494,69 @@ class EventSignalEngine:
         ask = float(token_book["best_ask"])
         bid = token_book.get("best_bid")
         mid = (ask + float(bid)) / 2.0 if bid is not None else ask
+        spread = (ask - float(bid)) if bid is not None else None
+        ask_size = token_book.get("ask_size")
+        primary_event_type = _event_attr(events[0], "event_type")
+        event_quality = _event_quality_score(events)
+        execution_scores = _execution_quality_scores(book_age, spread, ask, ask_size)
 
         if ask < MIN_FILL_PRICE:
             return {"decision": "skip", "reason": "fill_price_too_low", "ask": ask, "mid": mid}
 
-        primary_event_type = _event_attr(events[0], "event_type")
+        if ask >= 0.97 and primary_event_type != "THRONE_EXPOSED":
+            return {
+                "decision": "skip", "reason": "chasing_terminal_price",
+                "ask": ask, "mid": mid, "event_type": primary_event_type,
+                "event_tier": event_tier(primary_event_type), "event_family": event_family(primary_event_type),
+                "event_quality": event_quality, **execution_scores,
+            }
+        if (
+            ask >= 0.95
+            and primary_event_type in {
+                "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T4", "MULTIPLE_T3_TOWERS_DOWN",
+                "ALL_T3_TOWERS_DOWN", "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL",
+                "T3_PLUS_T4_CHAIN", "MULTI_STRUCTURE_COLLAPSE", "T3_TOWER_FALL",
+            }
+        ):
+            return {
+                "decision": "skip", "reason": "priced_out_high_ground_stomp",
+                "ask": ask, "mid": mid, "event_type": primary_event_type,
+                "event_tier": event_tier(primary_event_type), "event_family": event_family(primary_event_type),
+                "event_quality": event_quality, **execution_scores,
+            }
+
         max_fill = _EVENT_MAX_FILL.get(primary_event_type, DEFAULT_MAX_FILL_PRICE)
         if ask > max_fill:
-            return {"decision": "skip", "reason": "fill_price_too_high", "ask": ask, "mid": mid}
+            return {
+                "decision": "skip", "reason": "fill_price_too_high", "ask": ask, "mid": mid,
+                "event_type": primary_event_type, "event_tier": event_tier(primary_event_type),
+                "event_family": event_family(primary_event_type), "event_quality": event_quality,
+                **execution_scores,
+            }
 
-        spread = (ask - float(bid)) if bid is not None else None
+        if primary_event_type in {"COMEBACK", "MAJOR_COMEBACK", "LATE_MAJOR_COMEBACK_REPRICE"} and spread is not None and spread > 0.08:
+            return {
+                "decision": "skip", "reason": "wide_spread_comeback_alert",
+                "spread": spread, "ask": ask, "mid": mid, "event_type": primary_event_type,
+                "event_tier": event_tier(primary_event_type), "event_family": event_family(primary_event_type),
+                "event_quality": event_quality, **execution_scores,
+            }
+
         if spread is not None and spread > MAX_SPREAD:
-            return {"decision": "skip", "reason": "spread_too_wide", "spread": spread}
+            return {
+                "decision": "skip", "reason": "spread_too_wide", "spread": spread,
+                "event_type": primary_event_type, "event_tier": event_tier(primary_event_type),
+                "event_family": event_family(primary_event_type), "event_quality": event_quality,
+                **execution_scores,
+            }
 
-        ask_size = token_book.get("ask_size")
         if ask_size is not None and ask * float(ask_size) < MIN_ASK_SIZE_USD:
-            return {"decision": "skip", "reason": "insufficient_ask_size"}
+            return {
+                "decision": "skip", "reason": "insufficient_ask_size",
+                "event_type": primary_event_type, "event_tier": event_tier(primary_event_type),
+                "event_family": event_family(primary_event_type), "event_quality": event_quality,
+                **execution_scores,
+            }
 
         match_id = str(game.get("match_id") or game.get("lobby_id") or "")
         cooldown_key = (match_id, event_direction, primary_event_type)
@@ -550,6 +656,7 @@ class EventSignalEngine:
 
         cluster_event_types = [_event_attr(e, "event_type") for e in events]
         severities = [_event_attr(e, "severity", "") for e in events]
+        trade_score = event_quality * execution_scores["execution_quality_score"]
 
         return {
             "_cooldown_key": cooldown_key,
@@ -559,6 +666,10 @@ class EventSignalEngine:
             "event_type": primary_event_type,
             "event_tier": event_tier(primary_event_type),
             "event_is_primary": event_is_primary(primary_event_type),
+            "event_family": event_family(primary_event_type),
+            "event_quality": event_quality,
+            **execution_scores,
+            "trade_score": round(trade_score, 4),
             "cluster_event_types": "+".join(cluster_event_types),
             "event_direction": event_direction,
             "token_id": token_id,
@@ -591,6 +702,7 @@ class EventSignalEngine:
             "stream_delay_s": round(stream_delay_s, 3) if stream_delay_s is not None else None,
             "data_source": data_source,
             "book_age_ms": book_age,
+            "book_age_at_signal_ms": book_age,
         }
 
     def _adjusted_event_value(self, event: Any, game: dict) -> float:
@@ -615,9 +727,13 @@ class EventSignalEngine:
                 value *= min(abs_delta / 3000, 2.0)
             elif event_type == "MAJOR_COMEBACK":
                 value *= min(abs_delta / 8000, 2.0)
-            elif event_type == "KILL_CONFIRMED_LEAD_SWING":
+            elif event_type in {"LATE_MAJOR_COMEBACK_REPRICE", "LATE_ECONOMIC_CRASH"}:
+                value *= min(abs_delta / 10_000, 2.0)
+            elif event_type in {"CHAINED_LATE_FIGHT_RECOVERY", "STOMP_THROW_WITH_OBJECTIVE_RISK"}:
+                value *= min(abs_delta / 5_000, 2.0)
+            elif event_type in {"KILL_CONFIRMED_LEAD_SWING", "FIGHT_TO_GOLD_CONFIRM_30S"}:
                 value *= min(abs_delta / _KILL_CONFIRMED_NW_THRESHOLD, 2.0)
-            elif event_type == "KILL_BURST_30S":
+            elif event_type in {"KILL_BURST_30S", "ULTRA_LATE_WIPE_CONFIRMED"}:
                 value *= min(abs_delta / _KILL_BURST_MIN, 2.0)
             elif event_type in {
                 "T2_TOWER_FALL", "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN",
@@ -652,8 +768,18 @@ class EventSignalEngine:
             return 0.50
         if "MULTI_STRUCTURE_COLLAPSE" in event_types:
             return 0.45
+        if "ULTRA_LATE_WIPE_CONFIRMED" in event_types:
+            return 0.52
         if "ULTRA_LATE_WIPE" in event_types:
             return 0.48
+        if "STOMP_THROW_WITH_OBJECTIVE_RISK" in event_types:
+            return 0.40
+        if "LATE_MAJOR_COMEBACK_REPRICE" in event_types:
+            return 0.36
+        if "CHAINED_LATE_FIGHT_RECOVERY" in event_types:
+            return 0.34
+        if "LATE_ECONOMIC_CRASH" in event_types:
+            return 0.32
         if "OBJECTIVE_CONVERSION_T3" in event_types:
             return 0.42
         if "ALL_T3_TOWERS_DOWN" in event_types:
@@ -707,12 +833,15 @@ class EventSignalEngine:
             "COMEBACK", "MAJOR_COMEBACK", "LEAD_SWING_60S", "LEAD_SWING_30S",
             "EXTREME_LEAD_SWING_30S", "KILL_CONFIRMED_LEAD_SWING",
             "KILL_BURST_30S", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "STOMP_THROW",
+            "LATE_MAJOR_COMEBACK_REPRICE", "CHAINED_LATE_FIGHT_RECOVERY",
+            "LATE_ECONOMIC_CRASH", "ULTRA_LATE_WIPE_CONFIRMED",
+            "STOMP_THROW_WITH_OBJECTIVE_RISK", "FIGHT_TO_GOLD_CONFIRM_30S",
         }
         if raw_structure and not support:
             mult *= 0.82
         if "ALL_T2_TOWERS_DOWN" in event_types:
             mult *= 1.03
-        if event_team_lead is not None and event_team_lead < -4000 and not (event_types & {"COMEBACK", "MAJOR_COMEBACK", "STOMP_THROW", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE"}):
+        if event_team_lead is not None and event_team_lead < -4000 and not (event_types & {"COMEBACK", "MAJOR_COMEBACK", "STOMP_THROW", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "LATE_MAJOR_COMEBACK_REPRICE", "STOMP_THROW_WITH_OBJECTIVE_RISK"}):
             mult *= 0.92
         return min(max(mult, 0.75), 1.15)
 
@@ -727,6 +856,8 @@ class EventSignalEngine:
 
         if any(e.startswith("OBJECTIVE_CONVERSION_") for e in event_types):
             required += 0.005
+        if event_types & {"LATE_MAJOR_COMEBACK_REPRICE", "CHAINED_LATE_FIGHT_RECOVERY", "LATE_ECONOMIC_CRASH", "STOMP_THROW_WITH_OBJECTIVE_RISK"}:
+            required += 0.02
         if event_types == {"OBJECTIVE_CONVERSION_T2"} or event_types == {"T2_TOWER_FALL"}:
             required += 0.015
         if spread is not None and spread > MAX_SPREAD * 0.5:
@@ -736,14 +867,14 @@ class EventSignalEngine:
         if "ALL_T2_TOWERS_DOWN" in event_types:
             required -= 0.002
         if event_team_lead is not None:
-            if event_team_lead < -4000 and not (event_types & {"COMEBACK", "MAJOR_COMEBACK", "STOMP_THROW", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE"}):
+            if event_team_lead < -4000 and not (event_types & {"COMEBACK", "MAJOR_COMEBACK", "STOMP_THROW", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "LATE_MAJOR_COMEBACK_REPRICE", "STOMP_THROW_WITH_OBJECTIVE_RISK"}):
                 required += 0.010
             elif event_team_lead >= 10000 and any(e.startswith("OBJECTIVE_CONVERSION_") or e.endswith("T4_TOWER_FALL") for e in event_types):
                 required -= 0.003
         required = max(MIN_EXECUTABLE_EDGE, required)
 
         game_time = game.get("game_time_sec")
-        if game_time is not None and game_time >= 45 * 60 and not (event_types & {"ULTRA_LATE_WIPE", "SECOND_T4_TOWER_FALL", "OBJECTIVE_CONVERSION_T4"}):
+        if game_time is not None and game_time >= 45 * 60 and not (event_types & {"ULTRA_LATE_WIPE", "ULTRA_LATE_WIPE_CONFIRMED", "SECOND_T4_TOWER_FALL", "OBJECTIVE_CONVERSION_T4"}):
             required += 0.005
         return required
 

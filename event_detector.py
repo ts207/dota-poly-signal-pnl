@@ -10,7 +10,7 @@ from config import (
     EVENT_LEAD_SWING_60S,
     EVENT_COOLDOWN_GAME_SECONDS,
 )
-from event_taxonomy import event_is_primary, event_tier
+from event_taxonomy import event_family, event_is_primary, event_tier
 
 WINDOW_TOLERANCE_SEC = {30: 12, 60: 20}
 
@@ -28,6 +28,10 @@ STOMP_THROW_MIN_TIME = 30 * 60
 EVENT_DEDUPE_SECONDS = 120
 LATE_LEAD_SWING_DEMOTE_TIME = 50 * 60
 ULTRA_LATE_LEAD_SWING_DEMOTE_TIME = 60 * 60
+LATE_MAJOR_COMEBACK_TIME = 40 * 60
+CHAINED_LATE_FIGHT_TIME = 45 * 60
+CHAINED_RECOVERY_WINDOW_SEC = 90
+LATE_ECONOMIC_CRASH_TIME = 50 * 60
 
 # Composite conversion events: an objective falling in the same observed update as
 # a same-direction kill/networth swing is higher quality than a tower-only signal.
@@ -44,6 +48,12 @@ CONVERSION_SUPPORT_EVENTS = frozenset({
     "LATE_GAME_WIPE",
     "ULTRA_LATE_WIPE",
     "STOMP_THROW",
+    "LATE_MAJOR_COMEBACK_REPRICE",
+    "CHAINED_LATE_FIGHT_RECOVERY",
+    "LATE_ECONOMIC_CRASH",
+    "ULTRA_LATE_WIPE_CONFIRMED",
+    "STOMP_THROW_WITH_OBJECTIVE_RISK",
+    "FIGHT_TO_GOLD_CONFIRM_30S",
 })
 CONVERSION_TOWER_EVENTS = frozenset({
     "T2_TOWER_FALL",
@@ -73,6 +83,12 @@ _EVENT_BASE_PRESSURE: dict[str, float] = {
     "MULTIPLE_T3_TOWERS_DOWN": 0.50,
     "T3_TOWER_FALL": 0.35,
     "MAJOR_COMEBACK": 0.55,
+    "LATE_MAJOR_COMEBACK_REPRICE": 0.62,
+    "CHAINED_LATE_FIGHT_RECOVERY": 0.58,
+    "LATE_ECONOMIC_CRASH": 0.55,
+    "ULTRA_LATE_WIPE_CONFIRMED": 0.70,
+    "STOMP_THROW_WITH_OBJECTIVE_RISK": 0.62,
+    "FIGHT_TO_GOLD_CONFIRM_30S": 0.35,
     "COMEBACK": 0.35,
     "EXTREME_LEAD_SWING_30S": 0.50,
     "KILL_CONFIRMED_LEAD_SWING": 0.40,
@@ -100,6 +116,12 @@ _EVENT_CONFIDENCE: dict[str, float] = {
     "MULTIPLE_T3_TOWERS_DOWN": 0.65,
     "T3_TOWER_FALL": 0.50,
     "MAJOR_COMEBACK": 0.80,
+    "LATE_MAJOR_COMEBACK_REPRICE": 0.82,
+    "CHAINED_LATE_FIGHT_RECOVERY": 0.78,
+    "LATE_ECONOMIC_CRASH": 0.72,
+    "ULTRA_LATE_WIPE_CONFIRMED": 0.86,
+    "STOMP_THROW_WITH_OBJECTIVE_RISK": 0.80,
+    "FIGHT_TO_GOLD_CONFIRM_30S": 0.62,
     "COMEBACK": 0.55,
     "EXTREME_LEAD_SWING_30S": 0.70,
     "KILL_CONFIRMED_LEAD_SWING": 0.65,
@@ -151,6 +173,8 @@ class DotaEvent:
     event_dedupe_key: str | None = None
     event_is_primary: bool | None = None
     event_tier: str | None = None
+    event_family: str | None = None
+    event_quality: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -167,6 +191,7 @@ class EventDetector:
         self.history: dict[str, deque[dict]] = defaultdict(lambda: deque(maxlen=max_history))
         self.last_emitted_game_time: dict[tuple[str, str, str | None], int] = {}
         self.last_emitted_dedupe_game_time: dict[str, int] = {}
+        self.late_recovery_history: dict[tuple[str, str], deque[tuple[int, int, str]]] = defaultdict(lambda: deque(maxlen=12))
 
     def observe(self, game: dict, mapping: dict | None = None) -> list[DotaEvent]:
         match_id = str(game.get("match_id") or game.get("lobby_id") or "")
@@ -190,6 +215,7 @@ class EventDetector:
 
         events.extend(self._lead_swing_events(hist, snapshot, mapping))
         events.extend(self._score_confirmed_events(hist, snapshot, mapping))
+        events.extend(self._strategic_composite_events(events, snapshot, mapping))
         events.extend(self._objective_conversion_events(events, snapshot, mapping))
 
         events = self._enrich_pressure(events, previous, snapshot)
@@ -314,11 +340,14 @@ class EventDetector:
         out = []
         for event in events:
             key = _event_dedupe_key(event)
+            quality = _event_quality(event)
             out.append(replace(
                 event,
                 event_dedupe_key=key,
                 event_is_primary=event_is_primary(event.event_type),
                 event_tier=event_tier(event.event_type),
+                event_family=event_family(event.event_type),
+                event_quality=round(quality, 3),
             ))
         return out
 
@@ -334,6 +363,156 @@ class EventDetector:
                 self.last_emitted_dedupe_game_time[key] = game_time
             out.append(event)
         return out
+
+    # ------------------------------------------------------------------ #
+    # Strategic composite events                                          #
+    # ------------------------------------------------------------------ #
+
+    def _strategic_composite_events(
+        self,
+        events: list[DotaEvent],
+        cur: dict,
+        mapping: dict | None,
+    ) -> list[DotaEvent]:
+        """Promote same-update low-level events into final strategy events.
+
+        These composites remain feed-local: no book price, Roshan, buyback, or
+        player-identity assumptions are made here.
+        """
+        if not events:
+            return []
+
+        cur_time = cur.get("game_time_sec")
+        if cur_time is None:
+            return []
+
+        out: list[DotaEvent] = []
+        by_dir: dict[str, list[DotaEvent]] = defaultdict(list)
+        for event in events:
+            if event.direction:
+                by_dir[event.direction].append(event)
+
+        for direction, group in by_dir.items():
+            types = {event.event_type for event in group}
+            strongest_delta = max((abs(float(e.delta)) for e in group if isinstance(e.delta, (int, float))), default=0.0)
+
+            if (
+                cur_time >= LATE_MAJOR_COMEBACK_TIME
+                and {"MAJOR_COMEBACK", "LEAD_SWING_60S"} <= types
+                and self._cooldown_ok(cur, "LATE_MAJOR_COMEBACK_REPRICE", direction)
+            ):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="LATE_MAJOR_COMEBACK_REPRICE",
+                    previous_value="MAJOR_COMEBACK+LEAD_SWING_60S",
+                    current_value="late_comeback_reprice",
+                    delta=strongest_delta, window_sec=60, direction=direction,
+                    severity="high",
+                ))
+
+            if (
+                cur_time >= LATE_ECONOMIC_CRASH_TIME
+                and any(e.event_type == "LEAD_SWING_60S" and isinstance(e.delta, (int, float)) and abs(e.delta) >= 10_000 for e in group)
+                and (
+                    types & {"KILL_CONFIRMED_LEAD_SWING", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE"}
+                    or types & CONVERSION_TOWER_EVENTS
+                )
+                and self._cooldown_ok(cur, "LATE_ECONOMIC_CRASH", direction)
+            ):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="LATE_ECONOMIC_CRASH",
+                    previous_value="late_lead_swing+confirmation",
+                    current_value="late_economic_crash",
+                    delta=strongest_delta, window_sec=60, direction=direction,
+                    severity="high",
+                ))
+
+            if (
+                "ULTRA_LATE_WIPE" in types
+                and types & CONVERSION_TOWER_EVENTS
+                and self._cooldown_ok(cur, "ULTRA_LATE_WIPE_CONFIRMED", direction)
+            ):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="ULTRA_LATE_WIPE_CONFIRMED",
+                    previous_value="ULTRA_LATE_WIPE+base_pressure",
+                    current_value="ultra_late_wipe_confirmed",
+                    delta=strongest_delta, window_sec=30, direction=direction,
+                    severity="high",
+                ))
+
+            if (
+                "STOMP_THROW" in types
+                and types & CONVERSION_TOWER_EVENTS
+                and self._cooldown_ok(cur, "STOMP_THROW_WITH_OBJECTIVE_RISK", direction)
+            ):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="STOMP_THROW_WITH_OBJECTIVE_RISK",
+                    previous_value="STOMP_THROW+base_pressure",
+                    current_value="stomp_throw_objective_risk",
+                    delta=strongest_delta, window_sec=30, direction=direction,
+                    severity="high",
+                ))
+
+            if (
+                10 * 60 <= cur_time <= 30 * 60
+                and "KILL_CONFIRMED_LEAD_SWING" in types
+                and strongest_delta >= 1500
+                and self._cooldown_ok(cur, "FIGHT_TO_GOLD_CONFIRM_30S", direction)
+            ):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="FIGHT_TO_GOLD_CONFIRM_30S",
+                    previous_value="kill_swing+gold_swing",
+                    current_value="fight_to_gold_confirm",
+                    delta=strongest_delta, window_sec=30, direction=direction,
+                    severity="medium",
+                ))
+
+            self._append_late_recovery(cur, direction, group, strongest_delta)
+            if self._late_recovery_chain_ready(cur, direction):
+                if self._cooldown_ok(cur, "CHAINED_LATE_FIGHT_RECOVERY", direction):
+                    out.append(self._base_event(
+                        cur, mapping,
+                        event_type="CHAINED_LATE_FIGHT_RECOVERY",
+                        previous_value="late_recovery_sequence",
+                        current_value="chained_late_fight_recovery",
+                        delta=strongest_delta, window_sec=CHAINED_RECOVERY_WINDOW_SEC,
+                        direction=direction, severity="high",
+                    ))
+
+        return out
+
+    def _append_late_recovery(self, cur: dict, direction: str, group: list[DotaEvent], strongest_delta: float) -> None:
+        cur_time = cur.get("game_time_sec")
+        match_id = cur.get("match_id")
+        if cur_time is None or not match_id or cur_time < CHAINED_LATE_FIGHT_TIME:
+            return
+        types = {event.event_type for event in group}
+        qualifies = (
+            types & {"KILL_CONFIRMED_LEAD_SWING", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "LATE_ECONOMIC_CRASH"}
+            or any(e.event_type == "LEAD_SWING_60S" and isinstance(e.delta, (int, float)) and abs(e.delta) >= 5000 for e in group)
+        )
+        if not qualifies:
+            return
+        key = (str(match_id), direction)
+        hist = self.late_recovery_history[key]
+        if hist and hist[-1][0] == cur_time:
+            return
+        hist.append((int(cur_time), int(strongest_delta), "+".join(sorted(types))))
+
+    def _late_recovery_chain_ready(self, cur: dict, direction: str) -> bool:
+        cur_time = cur.get("game_time_sec")
+        match_id = cur.get("match_id")
+        if cur_time is None or not match_id:
+            return False
+        hist = self.late_recovery_history.get((str(match_id), direction))
+        if not hist or len(hist) < 2:
+            return False
+        previous = list(hist)[:-1]
+        return any(0 < int(cur_time) - ts <= CHAINED_RECOVERY_WINDOW_SEC for ts, _, _ in previous)
 
     # ------------------------------------------------------------------ #
     # Tower / structure events                                            #
@@ -849,6 +1028,14 @@ def _event_dedupe_key(event: DotaEvent) -> str:
         event.delta,
         event.window_sec,
     ))
+
+
+def _event_quality(event: DotaEvent) -> float:
+    base = float(event.base_pressure_score or 0.0)
+    conversion = float(event.conversion_score or 0.0)
+    fight = float(event.fight_pressure_score or 0.0)
+    economy = float(event.economic_pressure_score or 0.0)
+    return (0.35 * base) + (0.25 * conversion) + (0.20 * fight) + (0.20 * economy)
 
 
 def _bit_count(value: int) -> int:

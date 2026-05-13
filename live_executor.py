@@ -28,7 +28,8 @@ from config import (
     MIN_LAG,
     TRADE_EVENTS,
 )
-from signal_engine import age_ms, event_tier
+from event_taxonomy import event_tier
+from signal_engine import age_ms
 from mapping_validator import validate_mapping_identity
 
 STRUCTURE_EVENTS = frozenset({
@@ -310,6 +311,13 @@ class LiveExecutor:
 
         event_type = str(signal.get("event_type") or "")
         cluster_types = {e for e in str(signal.get("cluster_event_types") or event_type).split("+") if e}
+        if event_type == "OBJECTIVE_CONVERSION_T3":
+            ask = _to_float(signal.get("ask"))
+            edge = _to_float(signal.get("executable_edge"))
+            if ask is not None and ask > 0.85 and (edge is None or edge < 0.08):
+                return self._reject(signal, mapping, game, "objective_conversion_t3_requires_8c_edge_above_85c")
+        if _to_float(signal.get("ask")) is not None and _to_float(signal.get("ask")) >= 0.95 and event_type != "THRONE_EXPOSED":
+            return self._reject(signal, mapping, game, "chasing_terminal_price")
         if DISABLE_STRUCTURE_TRADES and (event_type in STRUCTURE_EVENTS or cluster_types <= STRUCTURE_EVENTS):
             return self._reject(signal, mapping, game, "structure_trade_disabled")
         if TRADE_EVENTS and not (event_type in TRADE_EVENTS or cluster_types & TRADE_EVENTS):
@@ -349,11 +357,15 @@ class LiveExecutor:
         event_max_fill = min(max(event_max_fill, 0.0), 0.99)
         if ask > event_max_fill:
             return self._reject(signal, mapping, game, "ask_above_event_max_fill")
+        if ask >= 0.95 and event_type != "THRONE_EXPOSED":
+            return self._reject(signal, mapping, game, "chasing_terminal_price")
 
         # Recompute edge against the fresh best ask immediately before submission.
         fresh_edge = fair - ask
         if fresh_edge < MIN_EXECUTABLE_EDGE:
             return self._reject(signal, mapping, game, "fresh_edge_too_small")
+        if event_type == "OBJECTIVE_CONVERSION_T3" and ask > 0.85 and fresh_edge < 0.08:
+            return self._reject(signal, mapping, game, "objective_conversion_t3_requires_8c_fresh_edge_above_85c")
 
         tick_size = str(mapping.get("tick_size") or LIVE_TICK_SIZE)
         price_cap = round_down_to_tick(fair - LIVE_SAFETY_MARGIN, tick_size)

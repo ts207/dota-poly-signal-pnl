@@ -45,7 +45,7 @@ ALLOW_EVENT_TRADES = os.getenv("ALLOW_EVENT_TRADES", "true").lower() in {"1", "t
 DISABLE_STRUCTURE_TRADES = os.getenv("DISABLE_STRUCTURE_TRADES", "false").lower() in {"1", "true", "yes"}
 # Default live allowlist is intentionally strict. Confirmation-only events can be
 # enabled explicitly after paper/live-attempt logs prove they are fillable.
-TRADE_EVENTS = {e.strip() for e in os.getenv("TRADE_EVENTS", "ULTRA_LATE_WIPE,LATE_GAME_WIPE,STOMP_THROW,MAJOR_COMEBACK,EXTREME_LEAD_SWING_30S,OBJECTIVE_CONVERSION_T3,OBJECTIVE_CONVERSION_T4,FIRST_T4_TOWER_FALL,SECOND_T4_TOWER_FALL").split(",") if e.strip()}
+TRADE_EVENTS = {e.strip() for e in os.getenv("TRADE_EVENTS", "THRONE_EXPOSED,SECOND_T4_TOWER_FALL,OBJECTIVE_CONVERSION_T4,T3_PLUS_T4_CHAIN").split(",") if e.strip()}
 ALLOW_CONFIRMATION_ONLY_LIVE_TRADES = os.getenv("ALLOW_CONFIRMATION_ONLY_LIVE_TRADES", "false").lower() in {"1", "true", "yes"}
 LIVE_ATTEMPTS_CSV_PATH = os.getenv("LIVE_ATTEMPTS_CSV_PATH", "logs/live_attempts.csv")
 

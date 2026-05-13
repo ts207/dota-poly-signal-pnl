@@ -249,3 +249,53 @@ def test_pressure_metadata_without_previous_snapshot():
     events = detector.observe(game(20, 500, building_state=ALL_ALIVE), mapping())
     for evt in events:
         assert evt.base_pressure_score is None or evt.base_pressure_score is not None
+
+
+def test_detects_late_major_comeback_reprice():
+    detector = EventDetector()
+    detector.observe(game(2400, -9000, r_score=20, d_score=28), mapping())
+    events = detector.observe(game(2460, 1500, r_score=24, d_score=28), mapping())
+    event_types = {e.event_type for e in events}
+    assert "MAJOR_COMEBACK" in event_types
+    assert "LEAD_SWING_60S" in event_types
+    evt = next(e for e in events if e.event_type == "LATE_MAJOR_COMEBACK_REPRICE")
+    assert evt.direction == "radiant"
+    assert evt.event_tier == "B"
+    assert evt.event_family == "late_reversal"
+
+
+def test_detects_ultra_late_wipe_confirmed_with_base_pressure():
+    detector = EventDetector()
+    detector.observe(game(3000, 0, r_score=30, d_score=30, building_state=ALL_ALIVE), mapping())
+    dire_top_t3_dead = ALL_ALIVE & ~(1 << 13)
+    events = detector.observe(
+        game(3031, 5500, r_score=34, d_score=30, building_state=dire_top_t3_dead),
+        mapping(),
+    )
+    event_types = {e.event_type for e in events}
+    assert "ULTRA_LATE_WIPE" in event_types
+    assert "T3_TOWER_FALL" in event_types
+    evt = next(e for e in events if e.event_type == "ULTRA_LATE_WIPE_CONFIRMED")
+    assert evt.direction == "radiant"
+    assert evt.event_tier == "B"
+
+
+def test_detects_fight_to_gold_confirm_research_event():
+    detector = EventDetector()
+    detector.observe(game(600, 0, r_score=8, d_score=8), mapping())
+    events = detector.observe(game(631, 2600, r_score=11, d_score=8), mapping())
+    evt = next(e for e in events if e.event_type == "FIGHT_TO_GOLD_CONFIRM_30S")
+    assert evt.direction == "radiant"
+    assert evt.event_tier == "research"
+    assert evt.event_is_primary is False
+
+
+def test_detects_chained_late_fight_recovery():
+    detector = EventDetector()
+    detector.observe(game(2670, 0, r_score=30, d_score=30), mapping())
+    first = detector.observe(game(2701, 6000, r_score=33, d_score=30), mapping())
+    assert any(e.event_type == "KILL_CONFIRMED_LEAD_SWING" for e in first)
+    second = detector.observe(game(2732, 6200, r_score=33, d_score=30), mapping())
+    evt = next(e for e in second if e.event_type == "CHAINED_LATE_FIGHT_RECOVERY")
+    assert evt.direction == "radiant"
+    assert evt.event_tier == "B"
