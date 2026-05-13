@@ -94,6 +94,8 @@ PAPER_TRADES_CSV_PATH = os.getenv("PAPER_TRADES_CSV_PATH", "logs/paper_trades.cs
 POSITIONS_CSV_PATH = os.getenv("POSITIONS_CSV_PATH", "logs/positions.csv")
 PNL_SUMMARY_CSV_PATH = os.getenv("PNL_SUMMARY_CSV_PATH", "logs/pnl_summary.csv")
 LATENCY_CSV_PATH = os.getenv("LATENCY_CSV_PATH", "logs/latency.csv")
+LIVE_LEAGUE_RAW_CSV_PATH = os.getenv("LIVE_LEAGUE_RAW_CSV_PATH", "logs/liveleague_raw.csv")
+LIVE_LEAGUE_FEATURES_CSV_PATH = os.getenv("LIVE_LEAGUE_FEATURES_CSV_PATH", "logs/liveleague_features.csv")
 
 if MODE not in {"paper", "live"}:
     raise RuntimeError("MODE must be paper or live-test compatible live.")

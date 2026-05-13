@@ -328,9 +328,13 @@ def test_raw_t3_tower_only_is_damped_vs_objective_conversion():
 def test_small_standalone_event_fails_explicit_lag_gate():
     now_ns = time.time_ns()
     engine = _engine_with_price(TOKEN_YES, 0.45)
+    # COMEBACK at minute 10 with small delta produces a tiny expected_move.
+    # Use a low enough ask price that edge passes but remaining_move < MIN_LAG.
+    ask = 0.38
+    bid = 0.36
     result = engine.evaluate(
-        "KILL_CONFIRMED_LEAD_SWING", "radiant", 5000,
-        _game(now_ns, game_time_sec=1200), _mapping(), _book(now_ns), None,
+        "COMEBACK", "radiant", 3001,
+        _game(now_ns, game_time_sec=600), _mapping(), _book(now_ns, ask=ask, bid=bid), None,
         severity="medium",
     )
     assert result["decision"] == "skip"

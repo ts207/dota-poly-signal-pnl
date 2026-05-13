@@ -14,6 +14,8 @@ PLACEHOLDER_MARKERS = {
     "POLY_MARKET_ID_HERE",
 }
 
+DEFAULT_MARKETS_PATH = os.path.join(os.path.dirname(__file__), "markets.yaml")
+
 
 @dataclass(frozen=True)
 class MappingError:
@@ -27,7 +29,7 @@ def _has_placeholder(value: Any) -> bool:
     return any(marker in text for marker in PLACEHOLDER_MARKERS)
 
 
-def load_mappings(filename: str = "markets.yaml") -> list[dict]:
+def load_mappings(filename: str = DEFAULT_MARKETS_PATH) -> list[dict]:
     if not os.path.exists(filename):
         return []
     with open(filename, "r", encoding="utf-8") as f:
@@ -65,7 +67,7 @@ def validate_mapping(mapping: dict, index: int = 0) -> tuple[bool, MappingError 
     return True, None
 
 
-def load_valid_mappings(filename: str = "markets.yaml") -> tuple[list[dict], list[MappingError]]:
+def load_valid_mappings(filename: str = DEFAULT_MARKETS_PATH) -> tuple[list[dict], list[MappingError]]:
     raw = load_mappings(filename)
     valid: list[dict] = []
     errors: list[MappingError] = []

@@ -1,32 +1,20 @@
-# Dota 2 → Polymarket Signal Bot (Paper / Read-Only)
+# Dota 2 → Polymarket Signal Bot (Guarded Live Test)
 
-This project monitors Steam live Dota 2 game state and compares it with Polymarket order-book data to study whether a **realistic paper fill** would have existed before the market repriced.
+This project monitors Steam live Dota 2 game state and compares it with Polymarket order-book data to trade in-game events.
 
-This build is intentionally **paper-only**. It does not place live orders.
+This build includes a **guarded $10 live-test path**. Use with caution.
 
-## What changed in this update
+## New in latest update
 
-Paper-trading readiness fixes:
+- **Latency Observability:** Dedicated `logs/latency.csv` decomposes the full path from Steam snapshot receipt → event detection → signal evaluation → order attempt.
+- **Structure Events:** Added `THRONE_EXPOSED`, `ALL_T3_TOWERS_DOWN`, `T3_PLUS_T4_CHAIN`, and `MULTI_STRUCTURE_COLLAPSE` with specific suppressions and max-fill caps.
+- **Survival Analysis:** `reaction_lag.py` now produces `logs/stale_ask_survival.csv`, estimating how many seconds an executable price persisted after a signal.
+- **Pressure Metadata:** Dota events now include `base_pressure_score`, `fight_pressure_score`, `economic_pressure_score`, and `conversion_score`.
+- **Bug Fixes:** Corrected latency-row cluster mapping and synchronized signal evaluation timestamps.
 
-- Paper entries now fill at the current best ask, not midpoint.
-- Paper exits now sell at the current best bid, not midpoint.
-- Signal edge is now `fair_price - executable_price`, where fair value is estimated in logit space from the pre-event anchor price and event impact.
-- The signal log now records `fair_price`, `executable_price`, `executable_edge`, `remaining_move`, `source_update_age_sec`, `stream_delay_s`, and `data_source`.
-- The bot defaults to trading only `top_live` Steam data and skips stale source updates; `stream_delay_s` is logged as spectator/broadcast metadata only and is not a freshness skip.
-- Lead-swing scaling now uses the same dynamic game-time thresholds as event detection.
-- Added event-specific max-fill safety caps so high-priority T4/wipe events are not blocked by the conservative default cap.
-- Same-poll direction clusters are all evaluated first; the bot now enters only the best executable candidate by `executable_edge`, then `expected_move`.
-- Removed legacy `market_move_90s` naming from code/dashboard/log headers.
-- Added tests for bid/ask paper fills, source freshness guards, stale-source skips, event-specific fill caps, and best-candidate selection.
+## Note on Live Status
 
-Previous event-model update included:
-
-- Split T4 events into `FIRST_T4_TOWER_FALL` and `SECOND_T4_TOWER_FALL`.
-- Removed generic `TOWER_FALL` and replaced it with `T2_TOWER_FALL`.
-- Removed `KILL_SWING_30S` and replaced it with `KILL_BURST_30S`.
-- Added `ULTRA_LATE_WIPE`, `MAJOR_COMEBACK`, and `MULTIPLE_T3_TOWERS_DOWN`.
-- Kept Ancient/game-over out of tradable events; it is terminal-only.
-- Added cluster scoring and overlap suppressions.
+New structure events (`THRONE_EXPOSED`, etc.) are **paper-active by default**. To enable them for live trading, add them to `TRADE_EVENTS` in your `.env`.
 
 ## Setup
 

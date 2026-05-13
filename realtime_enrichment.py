@@ -1,4 +1,16 @@
-from __future__ import annotations
+"""GetRealtimeStats parser and enrichment cache — SHADOW-ONLY SCAFFOLD.
+
+This module is intentionally NOT integrated into the live signal path (main.py).
+It exists for shadow-log validation of per-player net worth data from
+GetRealtimeStats before any trading use. Do NOT call maybe_enrich_realtime()
+before confirming the parser handles real payloads correctly.
+
+The REALTIME_STATS_ENABLED flag defaults to false. Enable it only after
+shadow-logging real payloads and confirming player net worth extraction works.
+When enabled, it attaches fields to the game dict (realtime_radiant_nw, etc.)
+but these must NOT change expected_move, edge, sizing, or live entry decisions
+until freshness is proven and the data is validated.
+"""
 
 import time
 import logging

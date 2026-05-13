@@ -235,10 +235,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: Xtreme Gaming
   no_team: PlayTime
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809536007'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-xtreme-playti-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T15:41:52+00:00'
+  auto_mapped_source: top_live
+  steam_radiant_team: PlayTime
+  steam_dire_team: Xtreme Gaming
+  steam_side_mapping: reversed
 - name: 'Dota 2: Xtreme Gaming vs PlayTime - Game 2 Winner'
   market_id: '2235745'
   condition_id: '0x1f41560e553aca1ae2f77076df1ce06f882b9f3b97f8d6d7bd5469ed81343fdc'
@@ -276,10 +281,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: PARIVISION
   no_team: Tundra Esports
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809504168'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-tundra-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T15:41:52+00:00'
+  auto_mapped_source: top_live
+  steam_radiant_team: PARIVISION
+  steam_dire_team: Tundra Esports
+  steam_side_mapping: normal
 - name: 'Dota 2: ex-HEROIC vs Virtus.pro - Game 1 Winner'
   market_id: '2235847'
   condition_id: '0x09a1d8b995573002d1139f12de3bd797a8c7c5a1eef8e0c9917be8fd38585a94'

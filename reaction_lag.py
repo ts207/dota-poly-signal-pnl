@@ -186,7 +186,7 @@ def analyze_reaction_lag(events: list[dict], books: list[dict]) -> list[dict]:
     return results
 
 
-def write_csv(path: Path, rows: list[dict]):
+def write_reaction_csv(path: Path, rows: list[dict]):
     path.parent.mkdir(parents=True, exist_ok=True)
     headers = [
         "event_timestamp_utc", "asset_id", "mapping_name", "event_type", "severity", "game_time_sec",
@@ -362,7 +362,7 @@ def print_raw_lag_summary(rows: list[dict]):
         print(f"  {len(no_move)} NW deltas: no book move within {REACTION_WINDOW_SECONDS}s window")
 
 
-def write_csv(path: Path, rows: list[dict]):
+def write_dynamic_csv(path: Path, rows: list[dict]):
     if not rows:
         return
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -395,7 +395,7 @@ def estimate_stale_ask_survival(signals_path: str | Path, books_path: str | Path
     results = []
     if signals and books:
         for sig in signals:
-            if sig.get("decision") not in {"paper_buy_yes", "live_attempt_result", "paper_entry_result"}:
+            if sig.get("decision") not in {"live_attempt_result", "paper_entry_result"}:
                 continue
             
             # Skip results rows to avoid double counting, but use them for paper_entry_result specific data
@@ -463,7 +463,7 @@ def estimate_stale_ask_survival(signals_path: str | Path, books_path: str | Path
             })
 
     if results:
-        write_csv(Path(output_path), results)
+        write_dynamic_csv(Path(output_path), results)
         print(f"wrote survival: {output_path}")
     else:
         # Write empty file with header to satisfy tests/checkers
@@ -489,7 +489,7 @@ def main():
     print(f"raw snapshots:  {len(snapshots)}")
 
     rows = analyze_reaction_lag(events, books)
-    write_csv(OUTPUT, rows)
+    write_reaction_csv(OUTPUT, rows)
     print_summary(rows)
     print(f"wrote: {OUTPUT}")
 
@@ -499,7 +499,8 @@ def main():
         print_raw_lag_summary(raw_rows)
         print(f"wrote: {RAW_LAG_OUTPUT}")
 
-    estimate_stale_ask_survival(CSV_LOG_PATH, BOOK_EVENTS_CSV_PATH, STALE_ASK_OUTPUT)
+    from config import LATENCY_CSV_PATH
+    estimate_stale_ask_survival(LATENCY_CSV_PATH, BOOK_EVENTS_CSV_PATH, STALE_ASK_OUTPUT)
 
 
 if __name__ == "__main__":
