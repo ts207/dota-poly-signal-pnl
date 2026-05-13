@@ -7,22 +7,33 @@ import time
 
 from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
-from signal_engine import EventSignalEngine
+from signal_engine import EventSignalEngine, apply_probability_move
 from paper_trader import PaperTrader
-from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger, SourceDelayLogger
+from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger
 from mapping import load_valid_mappings
 from event_detector import EventDetector
 from live_executor import LiveExecutor
 from liveleague_features import LiveLeagueContextCache, classify_liveleague_lag
 from mapping_validator import validate_mapping_identity
 from hybrid_nowcast import compute_hybrid_nowcast
+from book_refresh import fetch_fresh_book
+from event_taxonomy import event_tier, TIER_A_EVENTS, TIER_B_EVENTS
+from series_model import compute_bo3_match_p
 from config import (
     STEAM_API_KEY, STEAM_POLL_SECONDS, PAPER_EXECUTION_DELAY_MS, LIVE_TRADING,
-    ALLOW_CONFIRMATION_ONLY_LIVE_TRADES,
+    ALLOW_CONFIRMATION_ONLY_LIVE_TRADES, MAX_BOOK_AGE_MS, MIN_EXECUTABLE_EDGE,
+    MIN_LAG, MAX_SPREAD, MIN_ASK_SIZE_USD, PAPER_SLIPPAGE_CENTS, PAPER_TRADE_SIZE_USD,
+    PRICE_LOOKBACK_SEC
 )
 from sync_markets import sync_markets_to_games, load_markets, write_markets
 
 MAPPING_REFRESH_SECONDS = 60
+
+
+def age_ms(ns: int | None) -> int:
+    if not ns:
+        return 10 ** 9
+    return int((time.time_ns() - ns) / 1_000_000)
 
 
 def _best_signal_candidate(candidates: list[dict]) -> dict | None:
@@ -99,9 +110,12 @@ async def steam_loop(
     llg_raw_logger: LiveLeagueRawLogger,
     llg_feature_logger: LiveLeagueFeatureLogger,
     source_delay_logger: SourceDelayLogger,
+    rescue_logger: BookRefreshRescueLogger,
+    match_winner_logger: MatchWinnerSignalLogger,
     llg_cache: LiveLeagueContextCache,
     mappings: list[dict],
     asset_ids: list[str],
+    http_session: aiohttp.ClientSession | None = None,
 ):
     if not STEAM_API_KEY or STEAM_API_KEY == "replace_me":
         print("Missing STEAM_API_KEY. Copy .env.example to .env and fill it in.")
@@ -361,6 +375,128 @@ async def steam_loop(
                                         shadow_signal["decision"] = "skip"
                                         shadow_signal["reason"] = "shadow_no_primary"
                                         signal = shadow_signal
+
+                                # ── Stale-book rescue for Tier A/B events ──
+                                # When a Tier A/B signal is blocked by book_stale,
+                                # fetch a fresh orderbook via REST and re-evaluate.
+                                _rescue_tok_id = signal.get("token_id", "")
+                                _rescue_skip = signal.get("reason", "")
+                                _rescue_evt = signal.get("event_type") or ""
+                                _rescue_tier = signal.get("event_tier") or ""
+                                if (
+                                    _rescue_skip == "book_stale"
+                                    and _rescue_evt in (TIER_A_EVENTS | TIER_B_EVENTS)
+                                    and http_session is not None
+                                    and _rescue_tok_id
+                                ):
+                                    _local_book = book_store.get(_rescue_tok_id) or {}
+                                    _local_bid = _local_book.get("best_bid")
+                                    _local_ask = _local_book.get("best_ask")
+                                    _local_spread = None
+                                    if _local_bid is not None and _local_ask is not None:
+                                        try:
+                                            _local_spread = round(float(_local_ask) - float(_local_bid), 4)
+                                        except (TypeError, ValueError):
+                                            _local_spread = None
+                                    _local_ask_size = _local_book.get("ask_size")
+                                    _local_book_age = signal.get("book_age_ms")
+
+                                    _rescue_row = {
+                                        "match_id": str(game.get("match_id") or ""),
+                                        "event_type": _rescue_evt,
+                                        "event_tier": _rescue_tier,
+                                        "event_direction": event_direction,
+                                        "token_id": _rescue_tok_id,
+                                        "local_book_age_ms": _local_book_age,
+                                        "local_bid": _local_bid,
+                                        "local_ask": _local_ask,
+                                        "local_spread": _local_spread,
+                                        "local_ask_size": _local_ask_size,
+                                    }
+
+                                    try:
+                                        _fresh_book = await fetch_fresh_book(http_session, _rescue_tok_id, timeout_ms=2000)
+                                    except Exception:
+                                        _fresh_book = None
+
+                                    if _fresh_book and _fresh_book.get("best_ask") is not None:
+                                        _rescue_row["refresh_request_start_ns"] = _fresh_book.get("refresh_latency_ns")
+                                        _rescue_row["refresh_response_ns"] = _fresh_book.get("received_at_ns")
+                                        _rescue_row["refresh_latency_ms"] = round(_fresh_book.get("refresh_latency_ns", 0) / 1_000_000, 1)
+                                        _rescue_row["fresh_bid"] = _fresh_book.get("best_bid")
+                                        _rescue_row["fresh_ask"] = _fresh_book.get("best_ask")
+                                        _rescue_row["fresh_spread"] = _fresh_book.get("spread")
+                                        _rescue_row["fresh_ask_size"] = _fresh_book.get("ask_size")
+                                        _fresh_ts = _fresh_book.get("received_at_ns")
+                                        if _fresh_ts:
+                                            _rescue_row["fresh_book_age_ms_if_available"] = int((time.time_ns() - _fresh_ts) / 1_000_000)
+                                        else:
+                                            _rescue_row["fresh_book_age_ms_if_available"] = None
+
+                                        if _local_ask is not None and _fresh_book.get("best_ask") is not None:
+                                            try:
+                                                _rescue_row["local_to_fresh_ask_change"] = round(float(_fresh_book["best_ask"]) - float(_local_ask), 4)
+                                            except (TypeError, ValueError):
+                                                _rescue_row["local_to_fresh_ask_change"] = None
+
+                                        # Re-evaluate with fresh book substituted
+                                        _fresh_yes_book = yes_book
+                                        _fresh_no_book = no_book
+                                        _fresh_side = signal.get("side", "")
+                                        if _fresh_side == "YES":
+                                            if _rescue_tok_id == mapping.get("yes_token_id"):
+                                                _fresh_yes_book = _fresh_book
+                                            else:
+                                                _fresh_no_book = _fresh_book
+                                        else:
+                                            if _rescue_tok_id == mapping.get("no_token_id"):
+                                                _fresh_no_book = _fresh_book
+                                            else:
+                                                _fresh_yes_book = _fresh_book
+
+                                        _fresh_signal = signal_engine.evaluate_cluster(
+                                            events=cluster_events,
+                                            game=game,
+                                            mapping=mapping,
+                                            yes_book=_fresh_yes_book,
+                                            no_book=_fresh_no_book,
+                                            require_primary=not (LIVE_TRADING and ALLOW_CONFIRMATION_ONLY_LIVE_TRADES),
+                                        )
+                                        _rescue_row["fresh_executable_edge"] = _fresh_signal.get("executable_edge")
+                                        _rescue_row["fresh_remaining_move"] = _fresh_signal.get("remaining_move")
+                                        _rescue_row["fresh_decision"] = _fresh_signal.get("decision")
+                                        _rescue_row["fresh_skip_reason"] = _fresh_signal.get("reason")
+
+                                        # Markouts are sampled asynchronously after logging the rescue row.
+                                        # A background task will fill them in later.
+                                        _rescue_row["markout_3s"] = None
+                                        _rescue_row["markout_10s"] = None
+                                        _rescue_row["markout_30s"] = None
+                                    else:
+                                        _rescue_row["refresh_latency_ms"] = None
+                                        _rescue_row["fresh_bid"] = None
+                                        _rescue_row["fresh_ask"] = None
+                                        _rescue_row["fresh_spread"] = None
+                                        _rescue_row["fresh_ask_size"] = None
+                                        _rescue_row["fresh_book_age_ms_if_available"] = None
+                                        _rescue_row["local_to_fresh_ask_change"] = None
+                                        _rescue_row["fresh_executable_edge"] = None
+                                        _rescue_row["fresh_remaining_move"] = None
+                                        _rescue_row["fresh_decision"] = "rescue_failed"
+                                        _rescue_row["fresh_skip_reason"] = "fresh_book_fetch_empty" if _fresh_book is None else "fresh_book_missing_ask"
+                                        _rescue_row["markout_3s"] = None
+                                        _rescue_row["markout_10s"] = None
+                                        _rescue_row["markout_30s"] = None
+
+                                    rescue_logger.log_rescue(_rescue_row)
+                                    _rescue_lat = _rescue_row.get("refresh_latency_ms")
+                                    _rescue_lat_str = f"{_rescue_lat:.0f}ms" if _rescue_lat is not None else "timeout"
+                                    print(
+                                        f"BOOK_RESCUE {_rescue_evt} tier={_rescue_tier} "
+                                        f"local_age={_local_book_age}ms fresh_decision={_rescue_row.get('fresh_decision', '')} "
+                                        f"fresh_reason={_rescue_row.get('fresh_skip_reason', '')} latency={_rescue_lat_str}"
+                                    )
+
                                 tok_id = signal.get("token_id", "")
                                 tok_side = signal.get("side", "")
                                 event_names = [evt.event_type for evt in cluster_events]
@@ -418,6 +554,94 @@ async def steam_loop(
                                     token_id=tok_id,
                                     side=tok_side,
                                 )
+
+                                if mapping.get("market_type") == "MATCH_WINNER":
+                                    # Task 4: Match Winner research mode sidecar
+                                    try:
+                                        m_yes_book = yes_book or {}
+                                        m_no_book = no_book or {}
+                                        match_bid = m_yes_book.get("best_bid") if tok_side == "YES" else m_no_book.get("best_bid")
+                                        match_ask = m_yes_book.get("best_ask") if tok_side == "YES" else m_no_book.get("best_ask")
+
+                                        # Find the corresponding Map Winner mapping to get Map prices
+                                        map_m = next((m for m in mappings if str(m.get("dota_match_id")) == str(mapping.get("dota_match_id")) and m.get("market_type") == "MAP_WINNER"), None)
+
+                                        row = {
+                                            "timestamp_ns": time.time_ns(),
+                                            "match_id": str(game.get("match_id") or ""),
+                                            "event_type": signal.get("event_type") or "+".join(event_names),
+                                            "event_direction": event_direction,
+                                            "match_token_id": tok_id,
+                                            "match_bid": match_bid,
+                                            "match_ask": match_ask,
+                                            "match_book_age_ms": signal.get("book_age_ms"),
+                                            "match_fair_after": signal.get("fair_price"),
+                                            "match_edge": signal.get("executable_edge"),
+                                            "decision": "skip",
+                                            "skip_reason": "research_mode_match_winner",
+                                        }
+
+                                        # Try to fill in map-based fair values if we have a map mapping
+                                        if map_m:
+                                            map_yes_tok = map_m.get("yes_token_id")
+                                            map_no_tok = map_m.get("no_token_id")
+                                            row["map_token_id"] = map_yes_tok if tok_side == "YES" else map_no_tok
+
+                                            m_yes_b = book_store.get(map_yes_tok) or {}
+                                            m_no_b = book_store.get(map_no_tok) or {}
+                                            map_book = m_yes_b if tok_side == "YES" else m_no_b
+                                            row["map_bid"] = map_book.get("best_bid")
+                                            row["map_ask"] = map_book.get("best_ask")
+                                            row["map_book_age_ms"] = age_ms(map_book.get("received_at_ns"))
+
+                                            # Anchor for map before event
+                                            map_anchor = signal_engine._price_n_seconds_ago(row["map_token_id"], PRICE_LOOKBACK_SEC)
+                                            if map_anchor is None:
+                                                map_anchor = signal_engine._pregame_price.get(row["map_token_id"])
+
+                                            if map_anchor is not None:
+                                                row["current_map_p_before"] = map_anchor
+                                                expected_move = signal.get("expected_move") or 0.0
+                                                row["current_map_p_after"] = apply_probability_move(map_anchor, expected_move)
+
+                                                # Compute match_fair_before
+                                                p_next_yes = float(mapping.get("p_next_yes") or row["current_map_p_after"])
+                                                row["p_next_yes"] = p_next_yes
+                                                row["p_next_source"] = "mapping" if mapping.get("p_next_yes") else "map_fair"
+                                                row["neutral_p_next_yes"] = 0.5
+
+                                                series_score_yes = int(game.get("series_score_yes", 0))
+                                                series_score_no = int(game.get("series_score_no", 0))
+                                                current_game_number = int(game.get("current_game_number") or game.get("game_number_in_series") or 1)
+                                                series_type_val = int(mapping.get("series_type") or 1)
+
+                                                try:
+                                                    p_map_before = map_anchor if tok_side == "YES" else 1.0 - map_anchor
+                                                    p_next_yes_val = p_next_yes if tok_side == "YES" else 1.0 - p_next_yes
+
+                                                    row["match_fair_before"] = compute_bo3_match_p(
+                                                        p_current_map_yes=max(0.01, min(0.99, p_map_before)),
+                                                        p_next_yes=max(0.01, min(0.99, p_next_yes_val)),
+                                                        series_score_yes=series_score_yes,
+                                                        series_score_no=series_score_no,
+                                                        current_game_number=current_game_number,
+                                                        series_type=series_type_val,
+                                                    )
+                                                    if tok_side == "NO":
+                                                        row["match_fair_before"] = 1.0 - row["match_fair_before"]
+
+                                                    if row["match_fair_before"] is not None and row["match_fair_after"] is not None:
+                                                        row["match_fair_delta"] = row["match_fair_after"] - row["match_fair_before"]
+                                                except Exception:
+                                                    pass
+
+                                        match_winner_logger.log_match_signal(row)
+                                    except Exception as e:
+                                        print(f"Error in MATCH_WINNER sidecar: {e}")
+                                        traceback.print_exc()
+                                    finally:
+                                        signal["decision"] = "skip"
+                                        signal["reason"] = "research_mode_match_winner"
 
                                 if signal["decision"] == "paper_buy_yes":
                                     candidates.append({
@@ -584,6 +808,8 @@ async def main():
     llg_cache = LiveLeagueContextCache()
     live_logger = LiveAttemptLogger() if LIVE_TRADING else None
     live_executor = LiveExecutor() if LIVE_TRADING else None
+    rescue_logger = BookRefreshRescueLogger()
+    match_winner_logger = MatchWinnerSignalLogger(log_dir="logs")
 
     asset_ids = []
     for m in mappings:
@@ -605,10 +831,11 @@ async def main():
         print(f"Starting paper bot with {len(mappings)} active mapping(s). Checking for new games every {MAPPING_REFRESH_SECONDS}s.")
 
     try:
-        await asyncio.gather(
-            listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
-            steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, llg_cache, mappings, asset_ids),
-        )
+        async with aiohttp.ClientSession() as session:
+            await asyncio.gather(
+                listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
+                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, rescue_logger, match_winner_logger, llg_cache, mappings, asset_ids, http_session=session),
+            )
     except asyncio.CancelledError:
         pass
     finally:
