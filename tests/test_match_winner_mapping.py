@@ -10,7 +10,7 @@ def test_match_winner_mapping_missing_fields():
 def test_match_winner_mapping_invalid_state():
     m = {
         "market_type": "MATCH_WINNER",
-        "series_type": 3,
+        "series_type": 1,
         "current_game_number": 2,
         "series_score_yes": 0,
         "series_score_no": 0,
@@ -24,4 +24,26 @@ def test_match_winner_mapping_invalid_state():
         "dota_match_id": "123"
     }
     result = validate_mapping_schema(m)
+    assert result.game_number == 2
     assert any("invalid bo3 state" in err.lower() for err in result.mapping_errors)
+
+def test_match_winner_mapping_valid():
+    m = {
+        "market_type": "MATCH_WINNER",
+        "series_type": 1,
+        "current_game_number": 1,
+        "series_score_yes": 0,
+        "series_score_no": 0,
+        "p_next_yes": 0.5,
+        "confidence": 1.0,
+        "name": "Test Match",
+        "yes_team": "Team A",
+        "no_team": "Team B",
+        "yes_token_id": "1",
+        "no_token_id": "2",
+        "dota_match_id": "123"
+    }
+    result = validate_mapping_schema(m)
+    assert result.ok
+    assert result.game_number == 1
+    assert result.series_type == 1

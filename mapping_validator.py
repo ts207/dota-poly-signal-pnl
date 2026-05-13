@@ -116,20 +116,29 @@ def validate_mapping_schema(mapping: dict, index: int = 0) -> MappingValidationR
         result.mapping_errors.append(f"unsupported market_type={market_type}")
 
     if market_type == "MATCH_WINNER":
-        mw_required = ["series_type", "current_game_number", "series_score_yes", "series_score_no", "p_next_yes"]
-        mw_missing = [f for f in mw_required if mapping.get(f) is None]
-        if mw_missing:
-            result.mapping_errors.append(f"missing: {', '.join(mw_missing)}")
+        series_type_val = _to_int(mapping.get("series_type"))
+        if series_type_val is None:
+            result.mapping_errors.append("missing: series_type")
         else:
             try:
-                # Use a dummy p_current_map_yes=0.5 just to trigger state validation in compute_bo3_match_p
+                compute_bo3_match_p(0.5, 0.5, 0, 0, 1, series_type=int(series_type_val))
+            except (ValueError, TypeError) as e:
+                result.mapping_errors.append(f"invalid series_type: {e}")
+        current_game = _to_int(mapping.get("current_game_number"))
+        if current_game is not None and result.game_number is None:
+            result.game_number = current_game
+        score_yes = _to_int(mapping.get("series_score_yes"))
+        score_no = _to_int(mapping.get("series_score_no"))
+        p_next = mapping.get("p_next_yes")
+        if current_game is not None and score_yes is not None and score_no is not None and p_next is not None:
+            try:
                 compute_bo3_match_p(
                     p_current_map_yes=0.5,
-                    p_next_yes=float(mapping["p_next_yes"]),
-                    series_score_yes=int(mapping["series_score_yes"]),
-                    series_score_no=int(mapping["series_score_no"]),
-                    current_game_number=int(mapping["current_game_number"]),
-                    series_type=int(mapping["series_type"])
+                    p_next_yes=float(p_next),
+                    series_score_yes=int(score_yes),
+                    series_score_no=int(score_no),
+                    current_game_number=int(current_game),
+                    series_type=int(series_type_val),
                 )
             except (ValueError, TypeError, KeyError) as e:
                 result.mapping_errors.append(str(e))
