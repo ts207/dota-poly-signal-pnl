@@ -12,3 +12,8 @@ def calibration_metrics(y_true: list[int], y_prob: list[float]) -> dict[str, Any
         "log_loss": float(log_loss(y_true, y_prob, labels=labels)),
     }
 
+
+def calibrated_classifier(base_model: Any, *, method: str = "sigmoid", cv: int = 3) -> Any:
+    from sklearn.calibration import CalibratedClassifierCV
+
+    return CalibratedClassifierCV(base_model, method=method, cv=cv)

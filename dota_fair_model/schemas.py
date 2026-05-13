@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import Any
 
-FEATURE_SCHEMA_VERSION = "dota_fair_v1"
-PHASES = ("early", "mid", "late")
+FEATURE_SCHEMA_VERSION = "dota_fair_v2"
+PHASES = ("early", "laning", "mid", "late", "ultra_late")
 
 
 @dataclass(frozen=True)
@@ -22,11 +22,19 @@ class ModelMetadata:
 
 def phase_for_duration(duration_sec: int | float | None) -> str:
     if duration_sec is None:
-        return "late"
-    minutes = float(duration_sec) / 60.0
+        return "unknown"
+    if duration_sec == "":
+        return "unknown"
+    try:
+        minutes = float(duration_sec) / 60.0
+    except (TypeError, ValueError):
+        return "unknown"
     if minutes < 10:
         return "early"
-    if minutes < 25:
+    if minutes < 18:
+        return "laning"
+    if minutes < 30:
         return "mid"
-    return "late"
-
+    if minutes < 45:
+        return "late"
+    return "ultra_late"

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from team_utils import norm_team
+from event_taxonomy import TIER_A_EVENTS, TIER_B_EVENTS, TIER_C_EVENTS, event_is_primary, event_tier
 
 from config import (
     MAX_STEAM_AGE_MS, MAX_SOURCE_UPDATE_AGE_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS,
@@ -62,33 +63,7 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
     "ALL_T2_TOWERS_DOWN":        EventSpec(0.050, 0.12, 15.0, "confirmation"),
 }
 
-PRIMARY_TRADE_EVENTS = {name for name, spec in ACTIVE_EVENTS.items() if spec.kind == "primary"}
-
-TIER_A_EVENTS = frozenset({
-    "THRONE_EXPOSED",
-    "SECOND_T4_TOWER_FALL",
-    "OBJECTIVE_CONVERSION_T4",
-    "T3_PLUS_T4_CHAIN",
-    "OBJECTIVE_CONVERSION_T3",
-})
-TIER_B_EVENTS = frozenset({
-    "ULTRA_LATE_WIPE",
-    "LATE_GAME_WIPE",
-    "STOMP_THROW",
-    "MAJOR_COMEBACK",
-    "FIRST_T4_TOWER_FALL",
-    "ALL_T3_TOWERS_DOWN",
-    "MULTI_STRUCTURE_COLLAPSE",
-})
-TIER_C_EVENTS = frozenset({
-    "KILL_CONFIRMED_LEAD_SWING",
-    "EXTREME_LEAD_SWING_30S",
-    "LEAD_SWING_60S",
-    "LEAD_SWING_30S",
-    "KILL_BURST_30S",
-    "T2_TOWER_FALL",
-    "ALL_T2_TOWERS_DOWN",
-})
+PRIMARY_TRADE_EVENTS = set(TIER_A_EVENTS | TIER_B_EVENTS)
 
 SUPPRESSIONS: dict[str, set[str]] = {
     "OBJECTIVE_CONVERSION_T4": {"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"},
@@ -366,7 +341,14 @@ class EventSignalEngine:
             return {"decision": "skip", "reason": "event_direction_unknown"}
 
         if require_primary and not any(_event_attr(e, "event_type") in PRIMARY_TRADE_EVENTS for e in events):
-            return {"decision": "skip", "reason": "no_primary_event"}
+            primary_event_type = _event_attr(events[0], "event_type")
+            return {
+                "decision": "skip",
+                "reason": "no_primary_event",
+                "event_type": primary_event_type,
+                "event_tier": event_tier(primary_event_type),
+                "event_is_primary": event_is_primary(primary_event_type),
+            }
 
         # Standalone lead swings still need high severity.
         if not require_primary:
@@ -576,6 +558,7 @@ class EventSignalEngine:
             "reason": "event_cluster_lag_signal" if len(events) > 1 else "event_lag_signal",
             "event_type": primary_event_type,
             "event_tier": event_tier(primary_event_type),
+            "event_is_primary": event_is_primary(primary_event_type),
             "cluster_event_types": "+".join(cluster_event_types),
             "event_direction": event_direction,
             "token_id": token_id,
@@ -769,13 +752,3 @@ class EventSignalEngine:
         ms = signal.get("_cooldown_ms")
         if key and ms:
             self._last_signal_ms[key] = ms
-
-
-def event_tier(event_type: str | None) -> str:
-    if event_type in TIER_A_EVENTS:
-        return "A"
-    if event_type in TIER_B_EVENTS:
-        return "B"
-    if event_type in TIER_C_EVENTS:
-        return "C"
-    return "unknown"

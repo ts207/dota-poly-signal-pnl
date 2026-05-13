@@ -1,9 +1,33 @@
 from __future__ import annotations
 
 import os
+import json
+import hashlib
+import subprocess
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
+
+RUN_ID = os.getenv("RUN_ID") or str(int(time.time()))
+
+
+def _git_code_version() -> str:
+    env_version = os.getenv("CODE_VERSION")
+    if env_version:
+        return env_version
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(__file__),
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+CODE_VERSION = _git_code_version()
 
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 MODE = os.getenv("MODE", "paper").lower()
@@ -112,3 +136,19 @@ REACTION_WINDOW_SECONDS = int(os.getenv("REACTION_WINDOW_SECONDS", "30"))
 BOOK_MOVE_MIN_CENTS = float(os.getenv("BOOK_MOVE_MIN_CENTS", "0.01"))
 REALTIME_STATS_ENABLED = os.getenv("REALTIME_STATS_ENABLED", "false").lower() in {"1", "true", "yes"}
 REALTIME_STATS_STALE_SEC = int(os.getenv("REALTIME_STATS_STALE_SEC", "30"))
+
+
+def _config_hash() -> str:
+    keys = [
+        "LIVE_TRADING", "MAX_TOTAL_LIVE_USD", "MAX_TRADE_USD", "ORDER_TYPE",
+        "TRADE_EVENTS", "ALLOW_CONFIRMATION_ONLY_LIVE_TRADES",
+        "DISABLE_STRUCTURE_TRADES", "MAX_BOOK_AGE_MS", "MAX_STEAM_AGE_MS",
+        "MAX_SOURCE_UPDATE_AGE_SEC", "MIN_LAG", "MIN_EXECUTABLE_EDGE",
+        "MAX_SPREAD", "MIN_ASK_SIZE_USD", "PAPER_EXECUTION_DELAY_MS",
+        "EVENT_LEAD_SWING_30S", "EVENT_LEAD_SWING_60S",
+    ]
+    payload = {key: os.getenv(key) for key in keys}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]
+
+
+CONFIG_HASH = _config_hash()

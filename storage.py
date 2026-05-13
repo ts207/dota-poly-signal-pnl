@@ -9,6 +9,7 @@ from config import (
     CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH,
     LIVE_ATTEMPTS_CSV_PATH, LATENCY_CSV_PATH, LIVE_LEAGUE_RAW_JSONL_PATH,
     LIVE_LEAGUE_FEATURES_CSV_PATH, SOURCE_DELAY_CSV_PATH,
+    RUN_ID, CODE_VERSION, CONFIG_HASH,
 )
 
 RAW_SNAPSHOTS_CSV_PATH = "logs/raw_snapshots.csv"
@@ -34,9 +35,21 @@ class CsvLogger:
         parent = os.path.dirname(self.filename)
         if parent:
             os.makedirs(parent, exist_ok=True)
+        if os.path.exists(self.filename) and not self._header_matches():
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            os.replace(self.filename, f"{self.filename}.{stamp}.bak")
         if not os.path.exists(self.filename):
             with open(self.filename, "w", newline="", encoding="utf-8") as f:
                 csv.DictWriter(f, fieldnames=self.headers).writeheader()
+
+    def _header_matches(self) -> bool:
+        try:
+            with open(self.filename, newline="", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                existing = next(reader, [])
+        except (OSError, StopIteration):
+            return False
+        return existing == self.headers
 
     def append(self, row: dict):
         clean = {key: row.get(key) for key in self.headers}
@@ -54,10 +67,12 @@ class SignalLogger(CsvLogger):
     def __init__(self, filename: str = CSV_LOG_PATH):
         super().__init__(filename, [
             "timestamp_utc",
+            "run_id", "code_version", "config_hash",
             "match_id", "lobby_id", "league_id", "radiant_team", "dire_team",
             "game_time_sec", "radiant_lead", "radiant_score", "dire_score",
             "market_name", "market_type", "yes_team", "yes_token_id",
             "event_type", "cluster_event_types", "event_direction", "severity",
+            "event_tier", "event_is_primary",
             "token_id", "side",
             "lag", "expected_move", "fair_price", "executable_price", "executable_edge", "remaining_move",
             "market_move_recent", "price_lookback_sec", "pregame_move",
@@ -77,6 +92,9 @@ class SignalLogger(CsvLogger):
                    token_id: str = "", side: str = ""):
         self.append({
             "timestamp_utc": utc_now_iso(),
+            "run_id": RUN_ID,
+            "code_version": CODE_VERSION,
+            "config_hash": CONFIG_HASH,
             "match_id": game.get("match_id"),
             "lobby_id": game.get("lobby_id"),
             "league_id": game.get("league_id"),
@@ -94,6 +112,8 @@ class SignalLogger(CsvLogger):
             "cluster_event_types": signal.get("cluster_event_types"),
             "event_direction": signal.get("event_direction") or event_direction,
             "severity": severity,
+            "event_tier": signal.get("event_tier"),
+            "event_is_primary": signal.get("event_is_primary"),
             "token_id": token_id,
             "side": side,
             "lag": signal.get("lag"),
@@ -138,7 +158,8 @@ class SignalLogger(CsvLogger):
 class LatencyLogger(CsvLogger):
     def __init__(self, filename: str = LATENCY_CSV_PATH):
         super().__init__(filename, [
-            "timestamp_utc", "match_id", "market_name", "event_type", "cluster_event_types",
+            "timestamp_utc", "run_id", "code_version", "config_hash",
+            "match_id", "market_name", "event_type", "cluster_event_types",
             "event_direction", "game_time_sec", "data_source",
             "steam_received_at_ns", "steam_source_update_age_sec", "stream_delay_s",
             "event_detected_ns", "signal_eval_start_ns", "signal_evaluated_ns", "event_detection_latency_ms", "signal_eval_latency_ms",
@@ -172,6 +193,9 @@ class LatencyLogger(CsvLogger):
             pass
         
         row["timestamp_utc"] = utc_now_iso()
+        row["run_id"] = row.get("run_id") or RUN_ID
+        row["code_version"] = row.get("code_version") or CODE_VERSION
+        row["config_hash"] = row.get("config_hash") or CONFIG_HASH
         self.append(row)
 
 
@@ -209,8 +233,10 @@ class PositionLogger(CsvLogger):
 class DotaEventLogger(CsvLogger):
     def __init__(self, filename: str = DOTA_EVENTS_CSV_PATH):
         super().__init__(filename, [
-            "timestamp_utc", "match_id", "lobby_id", "league_id", "mapping_name", "yes_team", "yes_token_id",
-            "event_type", "severity", "game_time_sec", "radiant_team", "dire_team",
+            "timestamp_utc", "run_id", "code_version", "config_hash",
+            "match_id", "lobby_id", "league_id", "mapping_name", "yes_team", "yes_token_id",
+            "event_type", "event_tier", "event_is_primary", "event_dedupe_key",
+            "severity", "game_time_sec", "radiant_team", "dire_team",
             "radiant_lead", "radiant_score", "dire_score", "tower_state",
             "previous_value", "current_value", "delta", "window_sec", "threshold", "direction",
             "base_pressure_score", "fight_pressure_score", "economic_pressure_score",
@@ -223,6 +249,9 @@ class DotaEventLogger(CsvLogger):
         for event in events:
             row = event.to_dict() if hasattr(event, "to_dict") else dict(event)
             row["timestamp_utc"] = now
+            row["run_id"] = RUN_ID
+            row["code_version"] = CODE_VERSION
+            row["config_hash"] = CONFIG_HASH
             rows.append(row)
         self.append_many(rows)
 

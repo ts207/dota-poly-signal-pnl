@@ -28,6 +28,31 @@ def test_detects_30s_lead_swing():
     detector.observe(game(15, 500), mapping())
     events = detector.observe(game(31, 1800), mapping())
     assert any(e.event_type == "LEAD_SWING_30S" for e in events)
+    evt = next(e for e in events if e.event_type == "LEAD_SWING_30S")
+    assert evt.event_dedupe_key
+    assert evt.event_tier == "C"
+    assert evt.event_is_primary is False
+
+
+def test_suppresses_duplicate_same_event_key():
+    detector = EventDetector()
+    detector.observe(game(0, 0), mapping())
+    first = detector.observe(game(60, 8000), mapping())
+    repeated = detector.observe(game(60, 8000), mapping())
+    assert any(e.event_type == "LEAD_SWING_60S" for e in first)
+    assert not any(e.event_type == "LEAD_SWING_60S" for e in repeated)
+
+
+def test_ultra_late_lead_swing_requires_extreme_delta():
+    detector = EventDetector()
+    detector.observe(game(3540, 0), mapping())
+    noisy = detector.observe(game(3600, 16000), mapping())
+    assert not any(e.event_type == "LEAD_SWING_60S" for e in noisy)
+
+    detector = EventDetector()
+    detector.observe(game(3540, 0), mapping())
+    extreme = detector.observe(game(3600, 24000), mapping())
+    assert any(e.event_type == "LEAD_SWING_60S" for e in extreme)
 
 
 def test_detects_t2_tower_fall():

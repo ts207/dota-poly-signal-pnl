@@ -10,6 +10,7 @@ from config import (
     EVENT_LEAD_SWING_60S,
     EVENT_COOLDOWN_GAME_SECONDS,
 )
+from event_taxonomy import event_is_primary, event_tier
 
 WINDOW_TOLERANCE_SEC = {30: 12, 60: 20}
 
@@ -24,6 +25,9 @@ STOMP_THROW_MIN_LEAD = 12_000
 STOMP_THROW_MIN_NW_SWING = 2_500
 STOMP_THROW_MIN_KILLS = 3
 STOMP_THROW_MIN_TIME = 30 * 60
+EVENT_DEDUPE_SECONDS = 120
+LATE_LEAD_SWING_DEMOTE_TIME = 50 * 60
+ULTRA_LATE_LEAD_SWING_DEMOTE_TIME = 60 * 60
 
 # Composite conversion events: an objective falling in the same observed update as
 # a same-direction kill/networth swing is higher quality than a tower-only signal.
@@ -144,6 +148,9 @@ class DotaEvent:
     economic_pressure_score: float | None = None
     conversion_score: float | None = None
     event_confidence: float | None = None
+    event_dedupe_key: str | None = None
+    event_is_primary: bool | None = None
+    event_tier: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -159,6 +166,7 @@ class EventDetector:
     def __init__(self, max_history: int = 720):
         self.history: dict[str, deque[dict]] = defaultdict(lambda: deque(maxlen=max_history))
         self.last_emitted_game_time: dict[tuple[str, str, str | None], int] = {}
+        self.last_emitted_dedupe_game_time: dict[str, int] = {}
 
     def observe(self, game: dict, mapping: dict | None = None) -> list[DotaEvent]:
         match_id = str(game.get("match_id") or game.get("lobby_id") or "")
@@ -185,6 +193,8 @@ class EventDetector:
         events.extend(self._objective_conversion_events(events, snapshot, mapping))
 
         events = self._enrich_pressure(events, previous, snapshot)
+        events = self._add_event_metadata(events)
+        events = self._dedupe_events(events)
 
         hist.append(snapshot)
         return events
@@ -299,6 +309,31 @@ class EventDetector:
             ))
 
         return enriched
+
+    def _add_event_metadata(self, events: list[DotaEvent]) -> list[DotaEvent]:
+        out = []
+        for event in events:
+            key = _event_dedupe_key(event)
+            out.append(replace(
+                event,
+                event_dedupe_key=key,
+                event_is_primary=event_is_primary(event.event_type),
+                event_tier=event_tier(event.event_type),
+            ))
+        return out
+
+    def _dedupe_events(self, events: list[DotaEvent]) -> list[DotaEvent]:
+        out = []
+        for event in events:
+            key = event.event_dedupe_key or _event_dedupe_key(event)
+            game_time = event.game_time_sec
+            if game_time is not None:
+                last = self.last_emitted_dedupe_game_time.get(key)
+                if last is not None and game_time - last < EVENT_DEDUPE_SECONDS:
+                    continue
+                self.last_emitted_dedupe_game_time[key] = game_time
+            out.append(event)
+        return out
 
     # ------------------------------------------------------------------ #
     # Tower / structure events                                            #
@@ -540,6 +575,8 @@ class EventDetector:
             if window_sec == 30 and abs(delta) >= threshold * 3:
                 event_type = "EXTREME_LEAD_SWING_30S"
                 severity = "high"
+            if _late_lead_swing_is_noise(cur_time, delta, threshold):
+                continue
             if not self._cooldown_ok(cur, event_type, direction):
                 continue
             out.append(self._base_event(
@@ -792,6 +829,26 @@ def _lead_swing_threshold(window_sec: int, duration_sec: int) -> int:
     if minute < 50:
         return 5000
     return 7500
+
+
+def _late_lead_swing_is_noise(cur_time: int, delta: int, threshold: int) -> bool:
+    if cur_time >= ULTRA_LATE_LEAD_SWING_DEMOTE_TIME:
+        return abs(delta) < threshold * 3
+    if cur_time >= LATE_LEAD_SWING_DEMOTE_TIME:
+        return abs(delta) < threshold * 2
+    return False
+
+
+def _event_dedupe_key(event: DotaEvent) -> str:
+    return "|".join(str(part) for part in (
+        event.match_id,
+        event.event_type,
+        event.direction,
+        event.previous_value,
+        event.current_value,
+        event.delta,
+        event.window_sec,
+    ))
 
 
 def _bit_count(value: int) -> int:
