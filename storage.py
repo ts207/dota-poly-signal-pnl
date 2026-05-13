@@ -539,11 +539,11 @@ class BookRefreshRescueLogger(CsvLogger):
         self.append(row)
 
 
-class MatchWinnerSignalLogger:
+class MatchWinnerSignalLogger(CsvLogger):
     def __init__(self, log_dir: str):
-        self.filename = os.path.join(log_dir, "match_winner_signals.csv")
-        self.header = [
-            "timestamp_ns", "match_id", "event_type", "event_direction",
+        filename = os.path.join(log_dir, "match_winner_signals.csv")
+        headers = [
+            "timestamp_utc", "timestamp_ns", "match_id", "event_type", "event_direction",
             "map_token_id", "map_bid", "map_ask", "map_book_age_ms",
             "match_token_id", "match_bid", "match_ask", "match_book_age_ms",
             "current_map_p_before", "current_map_p_after",
@@ -551,11 +551,9 @@ class MatchWinnerSignalLogger:
             "match_fair_before", "match_fair_after", "match_fair_delta",
             "match_edge", "decision", "skip_reason"
         ]
-        if not os.path.exists(self.filename):
-            with open(self.filename, "w") as f:
-                f.write(",".join(self.header) + "\n")
+        super().__init__(filename, headers)
 
     def log_match_signal(self, row: dict):
-        with open(self.filename, "a") as f:
-            values = [str(row.get(h, "")) for h in self.header]
-            f.write(",".join(values) + "\n")
+        if "timestamp_utc" not in row:
+            row["timestamp_utc"] = ns_to_iso(row.get("timestamp_ns")) or utc_now_iso()
+        self.append(row)
