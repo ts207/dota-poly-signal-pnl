@@ -47,7 +47,7 @@ def test_rejects_placeholder_token():
     assert "placeholder" in err.reason
 
 
-def test_rejects_duplicate_match_id_across_game_markets(tmp_path):
+def test_rejects_duplicate_active_match_id_across_markets(tmp_path):
     path = tmp_path / "markets.yaml"
     path.write_text(
         """
@@ -73,7 +73,40 @@ markets:
     )
     valid, errors = load_valid_mappings(str(path))
     assert valid == []
-    assert any("duplicate dota_match_id" in err.reason for err in errors)
+    assert any("duplicate active dota_match_id" in err.reason for err in errors)
+
+
+def test_allows_duplicate_active_match_id_for_same_market_token_pair(tmp_path):
+    path = tmp_path / "markets.yaml"
+    path.write_text(
+        """
+markets:
+  - name: Team A vs Team B Game 1
+    market_id: same_market
+    condition_id: same_condition
+    market_type: MAP_WINNER
+    yes_team: Team A
+    no_team: Team B
+    yes_token_id: y1
+    no_token_id: n1
+    dota_match_id: same
+    confidence: 1.0
+  - name: Team A vs Team B Game 1 duplicate row
+    market_id: same_market
+    condition_id: same_condition
+    market_type: MAP_WINNER
+    yes_team: Team A
+    no_team: Team B
+    yes_token_id: y1
+    no_token_id: n1
+    dota_match_id: same
+    confidence: 1.0
+""",
+        encoding="utf-8",
+    )
+    valid, errors = load_valid_mappings(str(path))
+    assert len(valid) == 2
+    assert errors == []
 
 
 def test_identity_rejects_team_id_mismatch():

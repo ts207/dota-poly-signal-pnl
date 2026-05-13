@@ -61,9 +61,9 @@ def _make_raw(**overrides):
 
 
 def test_extract_items_picks_up_item_slots():
-    player = {"item0": 108, "item1": 50, "item2": 0, "backpack0": 77, "other_key": "foo"}
+    player = {"item0": 117, "item1": 50, "item2": 0, "backpack0": 77, "other_key": "foo"}
     items = extract_items(player)
-    assert 108 in items
+    assert 117 in items
     assert 50 in items
     assert 77 in items
     assert 0 not in items
@@ -87,9 +87,33 @@ def test_parse_players_basic():
 
 
 def test_parse_players_aegis_detection():
-    players = [_make_player(item0=108)]
+    players = [_make_player(item0=117)]
     parsed = parse_players(players)
     assert parsed[0]["has_aegis"] is True
+
+
+def test_parse_players_preserves_zero_fallback_values():
+    players = [{
+        "account_id": 0,
+        "player_slot": 7,
+        "death": 0,
+        "deaths": 3,
+        "gold_per_min": 0,
+        "gpm": 500,
+        "xp_per_min": 0,
+        "xpm": 600,
+        "respawn_timer": 0,
+        "respawn_time": 30,
+        "item_neutral": 0,
+        "neutral_item": 301,
+    }]
+    parsed = parse_players(players)
+    assert parsed[0]["account_id"] == 0
+    assert parsed[0]["deaths"] == 0
+    assert parsed[0]["gpm"] == 0
+    assert parsed[0]["xpm"] == 0
+    assert parsed[0]["respawn_timer"] == 0
+    assert parsed[0]["neutral_item"] == 0
 
 
 def test_parse_players_empty_list():
@@ -124,7 +148,7 @@ def test_extract_liveleague_features_basic():
 
 def test_extract_liveleague_features_aegis_radiant():
     raw = _make_raw()
-    raw["scoreboard"]["radiant"]["players"][0]["item0"] = 108
+    raw["scoreboard"]["radiant"]["players"][0]["item0"] = 117
     features = extract_liveleague_features(raw, time.time_ns())
     assert features["aegis_team"] == "radiant"
     assert features["aegis_holder_hero_id"] == 1
@@ -132,7 +156,7 @@ def test_extract_liveleague_features_aegis_radiant():
 
 def test_extract_liveleague_features_aegis_dire():
     raw = _make_raw()
-    raw["scoreboard"]["dire"]["players"][0]["item0"] = 108
+    raw["scoreboard"]["dire"]["players"][0]["item0"] = 117
     features = extract_liveleague_features(raw, time.time_ns())
     assert features["aegis_team"] == "dire"
 
@@ -264,6 +288,7 @@ def test_attach_to_game_fresh_context():
     assert result["liveleague_context_status"] in ("fresh", "stale")
     assert "liveleague_context" in result
     assert "liveleague_age_ms" in result
+    assert result["game_time_lag_sec"] == -2
 
 
 def test_attach_to_game_missing_context():

@@ -3,8 +3,15 @@ from __future__ import annotations
 import time
 from typing import Any
 
-AEGIS_ITEM_IDS = {108}
+AEGIS_ITEM_IDS = {117}
 MAX_PLAYERS_PER_SIDE = 5
+
+
+def first_present(*values):
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 def extract_items(player: dict) -> list[int]:
@@ -27,18 +34,18 @@ def parse_players(players: list[dict]) -> list[dict]:
             continue
         items = extract_items(p)
         out.append({
-            "account_id": p.get("account_id") or p.get("player_slot"),
-            "player_name": p.get("name") or p.get("player_name"),
+            "account_id": first_present(p.get("account_id"), p.get("player_slot")),
+            "player_name": first_present(p.get("name"), p.get("player_name")),
             "hero_id": p.get("hero_id"),
             "kills": p.get("kills"),
-            "deaths": p.get("death") or p.get("deaths"),
+            "deaths": first_present(p.get("death"), p.get("deaths")),
             "assists": p.get("assists"),
             "last_hits": p.get("last_hits"),
             "denies": p.get("denies"),
             "gold": p.get("gold"),
             "level": p.get("level"),
-            "gpm": p.get("gold_per_min") or p.get("gpm"),
-            "xpm": p.get("xp_per_min") or p.get("xpm"),
+            "gpm": first_present(p.get("gold_per_min"), p.get("gpm")),
+            "xpm": first_present(p.get("xp_per_min"), p.get("xpm")),
             "net_worth": p.get("net_worth"),
             "item0": p.get("item0"),
             "item1": p.get("item1"),
@@ -49,8 +56,8 @@ def parse_players(players: list[dict]) -> list[dict]:
             "backpack0": p.get("backpack0"),
             "backpack1": p.get("backpack1"),
             "backpack2": p.get("backpack2"),
-            "neutral_item": p.get("item_neutral") or p.get("neutral_item"),
-            "respawn_timer": p.get("respawn_timer") or p.get("respawn_time"),
+            "neutral_item": first_present(p.get("item_neutral"), p.get("neutral_item")),
+            "respawn_timer": first_present(p.get("respawn_timer"), p.get("respawn_time")),
             "items": items,
             "has_aegis": bool(set(items) & AEGIS_ITEM_IDS),
         })
@@ -323,14 +330,14 @@ class LiveLeagueContextCache:
         game["liveleague_game_time_sec"] = ctx_gt
 
         if ctx_gt is not None and game_gt is not None:
-            game["liveleague_minus_toplive_game_time_sec"] = ctx_gt - game_gt
+            game["game_time_lag_sec"] = game_gt - ctx_gt
         else:
-            game["liveleague_minus_toplive_game_time_sec"] = None
+            game["game_time_lag_sec"] = None
 
         ctx_fresh = (
             ctx_age_ms <= 3000
-            and game.get("liveleague_minus_toplive_game_time_sec") is not None
-            and abs(game["liveleague_minus_toplive_game_time_sec"]) <= 2
+            and game.get("game_time_lag_sec") is not None
+            and abs(game["game_time_lag_sec"]) <= 2
         )
 
         if ctx_fresh:
@@ -370,7 +377,7 @@ class LiveLeagueContextCache:
                 "aegis_team": ctx.get("aegis_team"),
                 "aegis_holder_hero_id": ctx.get("aegis_holder_hero_id"),
                 "liveleague_age_ms": game.get("liveleague_age_ms"),
-                "liveleague_minus_toplive_game_time_sec": game.get("liveleague_minus_toplive_game_time_sec"),
+                "game_time_lag_sec": game.get("game_time_lag_sec"),
                 "liveleague_context_status": game.get("liveleague_context_status"),
             }
             feature_logger.log_features(log_row)

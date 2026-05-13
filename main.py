@@ -311,12 +311,12 @@ async def steam_loop(
                                 ctx_fresh = (
                                     ctx is not None
                                     and game.get("liveleague_age_ms", 999999) <= 3000
-                                    and game.get("liveleague_minus_toplive_game_time_sec") is not None
-                                    and abs(game.get("liveleague_minus_toplive_game_time_sec", 999999)) <= 2
+                                    and game.get("game_time_lag_sec") is not None
+                                    and abs(game.get("game_time_lag_sec", 999999)) <= 2
                                 )
                                 signal["liveleague_context_status"] = game.get("liveleague_context_status")
                                 signal["liveleague_age_ms"] = game.get("liveleague_age_ms")
-                                signal["liveleague_minus_toplive_game_time_sec"] = game.get("liveleague_minus_toplive_game_time_sec")
+                                signal["game_time_lag_sec"] = game.get("game_time_lag_sec")
                                 if ctx_fresh:
                                     signal["aegis_team"] = ctx.get("aegis_team")
                                     signal["radiant_dead_count"] = ctx.get("radiant_dead_count")
@@ -331,9 +331,7 @@ async def steam_loop(
                                 else:
                                     signal["liveleague_derived_events"] = []
 
-                                lag = game.get("liveleague_minus_toplive_game_time_sec")
-                                if lag is not None:
-                                    lag = -lag
+                                lag = game.get("game_time_lag_sec")
                                 nowcast = compute_hybrid_nowcast(
                                     latest_liveleague_features=ctx,
                                     latest_toplive_snapshot=game,

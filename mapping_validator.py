@@ -138,6 +138,8 @@ def validate_active_mappings(mappings: list[dict]) -> list[MappingValidationResu
     results = [validate_mapping_schema(mapping, i) for i, mapping in enumerate(mappings)]
     by_match: dict[str, list[int]] = {}
     for i, mapping in enumerate(mappings):
+        if not _is_active_mapping(mapping):
+            continue
         mid = str(mapping.get("dota_match_id") or "")
         if mid:
             by_match.setdefault(mid, []).append(i)
@@ -145,15 +147,29 @@ def validate_active_mappings(mappings: list[dict]) -> list[MappingValidationResu
     for mid, indexes in by_match.items():
         if len(indexes) <= 1:
             continue
-        game_numbers = {results[i].game_number for i in indexes}
+        identities = {_market_identity(mappings[i]) for i in indexes}
+        if len(identities) <= 1:
+            continue
         names = ", ".join(str(mappings[i].get("name") or f"#{i}") for i in indexes)
-        if len(game_numbers) > 1 or any(gn is not None for gn in game_numbers):
-            for i in indexes:
-                results[i].duplicate_match_id_error = True
-                results[i].mapping_confidence = 0.0
-                results[i].mapping_errors.append(f"duplicate dota_match_id={mid} across Game N markets: {names}")
+        for i in indexes:
+            results[i].duplicate_match_id_error = True
+            results[i].mapping_confidence = 0.0
+            results[i].mapping_errors.append(f"duplicate active dota_match_id={mid}: {names}")
 
     return results
+
+
+def _is_active_mapping(mapping: dict) -> bool:
+    return _confidence(mapping) == 1.0 and not has_placeholder(mapping.get("dota_match_id")) and bool(mapping.get("dota_match_id"))
+
+
+def _market_identity(mapping: dict) -> tuple[str, str, str, str]:
+    return (
+        str(mapping.get("market_id") or ""),
+        str(mapping.get("condition_id") or ""),
+        str(mapping.get("yes_token_id") or ""),
+        str(mapping.get("no_token_id") or ""),
+    )
 
 
 def validate_mapping_identity(mapping: dict, game: dict, liveleague_context: dict | None = None) -> MappingValidationResult:

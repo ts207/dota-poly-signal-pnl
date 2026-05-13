@@ -407,7 +407,7 @@ class LiveLeagueFeatureLogger(CsvLogger):
             "radiant_has_aegis",
             "dire_has_aegis",
             "liveleague_age_ms",
-            "liveleague_minus_toplive_game_time_sec",
+            "game_time_lag_sec",
             "liveleague_context_status",
         ] + player_headers)
 
