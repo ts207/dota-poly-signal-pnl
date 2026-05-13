@@ -5,7 +5,11 @@ import os
 from datetime import datetime, timezone
 from typing import Iterable
 
-from config import CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH, LIVE_ATTEMPTS_CSV_PATH, LATENCY_CSV_PATH
+from config import (
+    CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH,
+    LIVE_ATTEMPTS_CSV_PATH, LATENCY_CSV_PATH, LIVE_LEAGUE_RAW_JSONL_PATH,
+    LIVE_LEAGUE_FEATURES_CSV_PATH, SOURCE_DELAY_CSV_PATH,
+)
 
 RAW_SNAPSHOTS_CSV_PATH = "logs/raw_snapshots.csv"
 
@@ -62,6 +66,10 @@ class SignalLogger(CsvLogger):
             "target_size_usd", "size_multiplier", "phase_mult", "event_kill_lead",
             "decision", "skip_reason",
             "steam_age_ms", "source_update_age_sec", "stream_delay_s", "data_source", "book_age_ms",
+            "mapping_confidence", "mapping_errors", "team_id_match",
+            "market_game_number_match", "duplicate_match_id_error",
+            "slow_model_fair", "fast_event_adjustment", "hybrid_fair",
+            "hybrid_confidence", "uncertainty_penalty",
         ])
 
     def log_signal(self, game: dict, mapping: dict, signal: dict, event_type: str = "",
@@ -114,6 +122,16 @@ class SignalLogger(CsvLogger):
             "stream_delay_s": signal.get("stream_delay_s"),
             "data_source": signal.get("data_source"),
             "book_age_ms": signal.get("book_age_ms"),
+            "mapping_confidence": signal.get("mapping_confidence") or game.get("mapping_confidence"),
+            "mapping_errors": signal.get("mapping_errors") or game.get("mapping_errors"),
+            "team_id_match": signal.get("team_id_match") or game.get("team_id_match"),
+            "market_game_number_match": signal.get("market_game_number_match") or game.get("market_game_number_match"),
+            "duplicate_match_id_error": signal.get("duplicate_match_id_error") or game.get("duplicate_match_id_error"),
+            "slow_model_fair": signal.get("slow_model_fair"),
+            "fast_event_adjustment": signal.get("fast_event_adjustment"),
+            "hybrid_fair": signal.get("hybrid_fair"),
+            "hybrid_confidence": signal.get("hybrid_confidence"),
+            "uncertainty_penalty": signal.get("uncertainty_penalty"),
         })
 
 
@@ -132,7 +150,11 @@ class LatencyLogger(CsvLogger):
             "paper_fill_price", "paper_entry_latency_ms",
             "live_submit_start_ns", "live_response_received_ns", "live_submit_latency_ms",
             "live_order_status", "live_reject_reason", "live_submitted_size_usd",
-            "live_filled_size_usd", "live_avg_fill_price"
+            "live_filled_size_usd", "live_avg_fill_price",
+            "mapping_confidence", "mapping_errors", "team_id_match",
+            "market_game_number_match", "duplicate_match_id_error",
+            "slow_model_fair", "fast_event_adjustment", "hybrid_fair",
+            "hybrid_confidence", "uncertainty_penalty",
         ])
 
     def log_latency(self, row: dict):
@@ -294,31 +316,17 @@ def _to_float(value):
 
 
 LIVE_LEAGUE_RAW_CSV_PATH = "logs/liveleague_raw.csv"
-LIVE_LEAGUE_FEATURES_CSV_PATH = "logs/liveleague_features.csv"
 
 
-class LiveLeagueRawLogger(CsvLogger):
-    def __init__(self, filename: str = LIVE_LEAGUE_RAW_CSV_PATH):
-        super().__init__(filename, [
-            "timestamp_utc",
-            "received_at_ns",
-            "match_id",
-            "lobby_id",
-            "league_id",
-            "series_id",
-            "series_type",
-            "radiant_team",
-            "dire_team",
-            "game_time_sec",
-            "stream_delay_s",
-            "raw_json",
-        ])
+class LiveLeagueRawLogger:
+    def __init__(self, filename: str = LIVE_LEAGUE_RAW_JSONL_PATH):
+        self.filename = filename
+        parent = os.path.dirname(self.filename)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
 
     def log_raw(self, raw: dict, received_at_ns: int):
         import json as _json
-        rj = _json.dumps(raw, default=str)
-        if len(rj) > 50000:
-            rj = rj[:50000]
         row = {
             "timestamp_utc": utc_now_iso(),
             "received_at_ns": received_at_ns,
@@ -331,48 +339,102 @@ class LiveLeagueRawLogger(CsvLogger):
             "dire_team": (raw.get("dire_team") or {}).get("team_name") if isinstance(raw.get("dire_team"), dict) else raw.get("dire_team"),
             "game_time_sec": int((raw.get("scoreboard") or {}).get("duration") or 0) or None if isinstance(raw.get("scoreboard"), dict) else None,
             "stream_delay_s": int(raw.get("stream_delay_s") or 0),
-            "raw_json": rj,
+            "raw": raw,
         }
-        self.append(row)
+        with open(self.filename, "a", encoding="utf-8") as f:
+            f.write(_json.dumps(row, default=str, sort_keys=True) + "\n")
 
 
 class LiveLeagueFeatureLogger(CsvLogger):
     def __init__(self, filename: str = LIVE_LEAGUE_FEATURES_CSV_PATH):
+        player_fields = [
+            "account_id", "player_name", "hero_id", "kills", "deaths", "assists",
+            "last_hits", "denies", "gold", "level", "gpm", "xpm", "net_worth",
+            "item0", "item1", "item2", "item3", "item4", "item5",
+            "backpack0", "backpack1", "backpack2", "neutral_item", "respawn_timer",
+        ]
+        player_headers = [
+            f"{side}_p{idx}_{field}"
+            for side in ("radiant", "dire")
+            for idx in range(1, 6)
+            for field in player_fields
+        ]
         super().__init__(filename, [
             "timestamp_utc",
+            "received_at_ns",
             "match_id",
             "lobby_id",
             "league_id",
             "series_id",
             "series_type",
             "game_time_sec",
+            "radiant_team_id",
+            "dire_team_id",
             "radiant_team",
             "dire_team",
+            "radiant_team_name",
+            "dire_team_name",
             "radiant_score",
             "dire_score",
+            "score_diff",
             "radiant_tower_state",
             "dire_tower_state",
             "radiant_barracks_state",
             "dire_barracks_state",
             "radiant_net_worth",
             "dire_net_worth",
+            "net_worth_diff",
+            "top1_net_worth_diff",
+            "top2_net_worth_diff",
+            "top3_net_worth_diff",
+            "level_diff",
+            "gpm_diff",
+            "xpm_diff",
+            "gold_diff",
             "radiant_dead_count",
             "dire_dead_count",
+            "dead_core_count",
             "radiant_max_respawn",
             "dire_max_respawn",
+            "max_respawn_timer",
             "radiant_core_dead_count",
             "dire_core_dead_count",
             "radiant_top3_nw",
             "dire_top3_nw",
             "aegis_team",
+            "aegis_holder_side",
             "aegis_holder_hero_id",
+            "radiant_has_aegis",
+            "dire_has_aegis",
             "liveleague_age_ms",
             "liveleague_minus_toplive_game_time_sec",
             "liveleague_context_status",
-        ])
+        ] + player_headers)
 
     def log_features(self, features: dict):
         row = {key: features.get(key) for key in self.headers}
+        row["timestamp_utc"] = utc_now_iso()
+        self.append(row)
+
+
+class SourceDelayLogger(CsvLogger):
+    def __init__(self, filename: str = SOURCE_DELAY_CSV_PATH):
+        super().__init__(filename, [
+            "timestamp_utc",
+            "match_id",
+            "lobby_id",
+            "league_id",
+            "liveleague_received_at_ns",
+            "liveleague_game_time_sec",
+            "nearest_toplive_received_at_ns",
+            "nearest_toplive_game_time_sec",
+            "game_time_lag_sec",
+            "stream_delay_s",
+            "wall_clock_receive_gap_sec",
+            "liveleague_usage",
+        ])
+
+    def log_source_delay(self, row: dict):
         row["timestamp_utc"] = utc_now_iso()
         self.append(row)
 

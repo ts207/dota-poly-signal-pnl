@@ -37,11 +37,28 @@ def _signal(**overrides):
 
 
 def _game():
-    return {"match_id": "M1", "received_at_ns": time.time_ns(), "game_over": False}
+    return {
+        "match_id": "M1",
+        "received_at_ns": time.time_ns(),
+        "game_over": False,
+        "radiant_team": "Team A",
+        "dire_team": "Team B",
+    }
 
 
 def _mapping(**overrides):
-    base = {"name": "MKT", "tick_size": "0.01", "neg_risk": False}
+    base = {
+        "name": "Team A vs Team B Game 1",
+        "market_type": "MAP_WINNER",
+        "yes_team": "Team A",
+        "no_team": "Team B",
+        "yes_token_id": "TOKYES",
+        "no_token_id": "TOKNO",
+        "dota_match_id": "M1",
+        "confidence": 1.0,
+        "tick_size": "0.01",
+        "neg_risk": False,
+    }
     base.update(overrides)
     return base
 
@@ -150,3 +167,28 @@ async def test_live_executor_rejects_above_event_max_fill():
     )
     assert attempt.order_status == "rejected_precheck"
     assert attempt.reason_if_rejected == "ask_above_event_max_fill"
+
+
+@pytest.mark.asyncio
+async def test_live_executor_rejects_mapping_confidence_below_one():
+    executor = LiveExecutor(client=FakeLiveClient())
+    attempt = await executor.try_buy(
+        signal=_signal(), mapping=_mapping(confidence=0.99), game=_game(), book_store=_book_store()
+    )
+    assert attempt.order_status == "rejected_precheck"
+    assert attempt.reason_if_rejected.startswith("mapping_invalid:")
+
+
+@pytest.mark.asyncio
+async def test_live_executor_rejects_tier_c_by_default(monkeypatch):
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"LEAD_SWING_30S"})
+    monkeypatch.setattr("live_executor.ALLOW_CONFIRMATION_ONLY_LIVE_TRADES", False)
+    executor = LiveExecutor(client=FakeLiveClient())
+    attempt = await executor.try_buy(
+        signal=_signal(event_type="LEAD_SWING_30S", cluster_event_types="LEAD_SWING_30S"),
+        mapping=_mapping(),
+        game=_game(),
+        book_store=_book_store(),
+    )
+    assert attempt.order_status == "rejected_precheck"
+    assert attempt.reason_if_rejected == "confirmation_only_event"

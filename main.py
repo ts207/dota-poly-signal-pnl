@@ -9,11 +9,13 @@ from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
 from signal_engine import EventSignalEngine
 from paper_trader import PaperTrader
-from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger
+from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger, SourceDelayLogger
 from mapping import load_valid_mappings
 from event_detector import EventDetector
 from live_executor import LiveExecutor
-from liveleague_features import LiveLeagueContextCache
+from liveleague_features import LiveLeagueContextCache, classify_liveleague_lag
+from mapping_validator import validate_mapping_identity
+from hybrid_nowcast import compute_hybrid_nowcast
 from config import (
     STEAM_API_KEY, STEAM_POLL_SECONDS, PAPER_EXECUTION_DELAY_MS, LIVE_TRADING,
     ALLOW_CONFIRMATION_ONLY_LIVE_TRADES,
@@ -96,6 +98,7 @@ async def steam_loop(
     live_logger: LiveAttemptLogger | None,
     llg_raw_logger: LiveLeagueRawLogger,
     llg_feature_logger: LiveLeagueFeatureLogger,
+    source_delay_logger: SourceDelayLogger,
     llg_cache: LiveLeagueContextCache,
     mappings: list[dict],
     asset_ids: list[str],
@@ -190,10 +193,38 @@ async def steam_loop(
                     # Validate mapping identity against LLG context immediately
                     for mapping in mappings:
                         if str(mapping.get("dota_match_id") or "") in {match_id, str(game.get("lobby_id") or "")}:
-                            mismatches = llg_cache.validate_mapping(game, mapping)
-                            if mismatches:
-                                for mm in mismatches:
-                                    print(f"MAPPING MISMATCH {match_id}: {mm}")
+                            mapping_result = validate_mapping_identity(mapping, game)
+                            game["mapping_confidence"] = mapping_result.mapping_confidence
+                            game["mapping_errors"] = ";".join(mapping_result.mapping_errors)
+                            game["team_id_match"] = mapping_result.team_id_match
+                            game["market_game_number_match"] = mapping_result.market_game_number_match
+                            game["duplicate_match_id_error"] = mapping_result.duplicate_match_id_error
+                            if mapping_result.mapping_errors:
+                                print(f"MAPPING MISMATCH {match_id}: {game['mapping_errors']}")
+
+                    if game.get("liveleague_context"):
+                        ctx = game["liveleague_context"]
+                        llg_gt = ctx.get("game_time_sec")
+                        top_gt = game.get("game_time_sec")
+                        lag = None
+                        if llg_gt is not None and top_gt is not None:
+                            lag = top_gt - llg_gt
+                        wall_gap = None
+                        if game.get("received_at_ns") and ctx.get("received_at_ns"):
+                            wall_gap = round((game["received_at_ns"] - ctx["received_at_ns"]) / 1_000_000_000, 3)
+                        source_delay_logger.log_source_delay({
+                            "match_id": match_id,
+                            "lobby_id": game.get("lobby_id"),
+                            "league_id": game.get("league_id"),
+                            "liveleague_received_at_ns": ctx.get("received_at_ns"),
+                            "liveleague_game_time_sec": llg_gt,
+                            "nearest_toplive_received_at_ns": game.get("received_at_ns"),
+                            "nearest_toplive_game_time_sec": top_gt,
+                            "game_time_lag_sec": lag,
+                            "stream_delay_s": ctx.get("stream_delay_s"),
+                            "wall_clock_receive_gap_sec": wall_gap,
+                            "liveleague_usage": classify_liveleague_lag(lag),
+                        })
 
                     # Guard: Ignore non-TopLive sources for event detection (too stale)
                     if data_source != "top_live":
@@ -300,6 +331,24 @@ async def steam_loop(
                                 else:
                                     signal["liveleague_derived_events"] = []
 
+                                lag = game.get("liveleague_minus_toplive_game_time_sec")
+                                if lag is not None:
+                                    lag = -lag
+                                nowcast = compute_hybrid_nowcast(
+                                    latest_liveleague_features=ctx,
+                                    latest_toplive_snapshot=game,
+                                    toplive_event_cluster=cluster_events,
+                                    source_delay_metrics={"game_time_lag_sec": lag},
+                                    slow_model_fair=None,
+                                    event_only_fair=signal.get("fair_price"),
+                                )
+                                signal.update(nowcast.to_dict())
+                                signal["mapping_confidence"] = game.get("mapping_confidence")
+                                signal["mapping_errors"] = game.get("mapping_errors")
+                                signal["team_id_match"] = game.get("team_id_match")
+                                signal["market_game_number_match"] = game.get("market_game_number_match")
+                                signal["duplicate_match_id_error"] = game.get("duplicate_match_id_error")
+
                                 if signal.get("reason") == "no_primary_event":
                                     shadow_signal = signal_engine.evaluate_cluster(
                                         events=cluster_events,
@@ -350,6 +399,16 @@ async def steam_loop(
                                     "remaining_move": signal.get("remaining_move"),
                                     "required_edge": signal.get("required_edge"),
                                     "lag": signal.get("lag"),
+                                    "mapping_confidence": game.get("mapping_confidence"),
+                                    "mapping_errors": game.get("mapping_errors"),
+                                    "team_id_match": game.get("team_id_match"),
+                                    "market_game_number_match": game.get("market_game_number_match"),
+                                    "duplicate_match_id_error": game.get("duplicate_match_id_error"),
+                                    "slow_model_fair": signal.get("slow_model_fair"),
+                                    "fast_event_adjustment": signal.get("fast_event_adjustment"),
+                                    "hybrid_fair": signal.get("hybrid_fair"),
+                                    "hybrid_confidence": signal.get("hybrid_confidence"),
+                                    "uncertainty_penalty": signal.get("uncertainty_penalty"),
                                 }
                                 latency_logger.log_latency(latency_row)
 
@@ -523,6 +582,7 @@ async def main():
     latency_logger = LatencyLogger()
     llg_raw_logger = LiveLeagueRawLogger()
     llg_feature_logger = LiveLeagueFeatureLogger()
+    source_delay_logger = SourceDelayLogger()
     llg_cache = LiveLeagueContextCache()
     live_logger = LiveAttemptLogger() if LIVE_TRADING else None
     live_executor = LiveExecutor() if LIVE_TRADING else None
@@ -549,7 +609,7 @@ async def main():
     try:
         await asyncio.gather(
             listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
-            steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, llg_cache, mappings, asset_ids),
+            steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, llg_cache, mappings, asset_ids),
         )
     except asyncio.CancelledError:
         pass

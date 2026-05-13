@@ -1,7 +1,7 @@
 import time
 from liveleague_features import (
     extract_items, parse_players, extract_liveleague_features,
-    compute_derived_events, LiveLeagueContextCache,
+    compute_derived_events, LiveLeagueContextCache, classify_liveleague_lag,
 )
 
 
@@ -174,6 +174,36 @@ def test_extract_liveleague_features_missing_scoreboard():
     assert features["game_time_sec"] is None
     assert features["radiant_players"] == []
     assert features["dire_players"] == []
+    assert features["net_worth_diff"] is None
+
+
+def test_extract_liveleague_features_missing_item_and_gpm_fields_are_null():
+    raw = _make_raw()
+    player = raw["scoreboard"]["radiant"]["players"][0]
+    for key in ["item0", "item1", "gold_per_min", "xp_per_min", "last_hits"]:
+        player.pop(key, None)
+    features = extract_liveleague_features(raw, time.time_ns())
+    assert features["radiant_p1_item0"] is None
+    assert features["radiant_p1_gpm"] is None
+    assert features["radiant_p1_xpm"] is None
+    assert features["radiant_p1_last_hits"] is None
+
+
+def test_extract_liveleague_features_malformed_numeric_fields_do_not_crash():
+    raw = _make_raw()
+    raw["scoreboard"]["radiant"]["players"][0]["net_worth"] = "bad"
+    raw["scoreboard"]["dire"]["players"][0]["level"] = "bad"
+    features = extract_liveleague_features(raw, time.time_ns())
+    assert features["match_id"] == "12345"
+    assert features["radiant_net_worth"] == 4000
+
+
+def test_classify_liveleague_lag_thresholds():
+    assert classify_liveleague_lag(None) == "unknown"
+    assert classify_liveleague_lag(10) == "direct"
+    assert classify_liveleague_lag(11) == "prior"
+    assert classify_liveleague_lag(60) == "prior"
+    assert classify_liveleague_lag(61) == "background"
 
 
 def test_extract_liveleague_features_series_id_non_numeric():

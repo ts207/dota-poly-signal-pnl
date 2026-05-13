@@ -1,32 +1,12 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import Any
 
 import yaml
 
-SUPPORTED_MARKET_TYPES = {"MAP_WINNER"}
-PLACEHOLDER_MARKERS = {
-    "TOKEN_ID_HERE",
-    "MATCH_OR_LOBBY_ID_HERE",
-    "STEAM_MATCH_OR_LOBBY_ID_HERE",
-    "POLY_MARKET_ID_HERE",
-}
+from mapping_validator import MappingError, has_placeholder, validate_active_mappings, validate_mapping_schema
 
 DEFAULT_MARKETS_PATH = os.path.join(os.path.dirname(__file__), "markets.yaml")
-
-
-@dataclass(frozen=True)
-class MappingError:
-    index: int
-    name: str | None
-    reason: str
-
-
-def _has_placeholder(value: Any) -> bool:
-    text = str(value or "")
-    return any(marker in text for marker in PLACEHOLDER_MARKERS)
 
 
 def load_mappings(filename: str = DEFAULT_MARKETS_PATH) -> list[dict]:
@@ -38,27 +18,12 @@ def load_mappings(filename: str = DEFAULT_MARKETS_PATH) -> list[dict]:
 
 
 def validate_mapping(mapping: dict, index: int = 0) -> tuple[bool, MappingError | None]:
-    required = ["market_type", "yes_team", "yes_token_id", "no_token_id", "dota_match_id"]
-    missing = [field for field in required if not mapping.get(field)]
-    if missing:
-        return False, MappingError(index=index, name=mapping.get("name"), reason=f"missing: {', '.join(missing)}")
-
-    for field in ["yes_token_id", "no_token_id", "dota_match_id", "market_id", "condition_id"]:
-        if _has_placeholder(mapping.get(field)):
-            return False, MappingError(index=index, name=mapping.get("name"), reason=f"placeholder value in {field}")
+    result = validate_mapping_schema(mapping, index)
+    if result.mapping_errors:
+        return False, MappingError(index=index, name=mapping.get("name"), reason="; ".join(result.mapping_errors))
 
     market_type = str(mapping.get("market_type", "")).upper()
-    if market_type not in SUPPORTED_MARKET_TYPES:
-        return False, MappingError(index=index, name=mapping.get("name"), reason=f"unsupported market_type={market_type}")
-
-    try:
-        confidence = float(mapping.get("confidence", 0))
-    except (TypeError, ValueError):
-        return False, MappingError(index=index, name=mapping.get("name"), reason="confidence is not numeric")
-
-    if confidence < 0.98:
-        return False, MappingError(index=index, name=mapping.get("name"), reason="confidence below 0.98")
-
+    confidence = float(mapping.get("confidence", 0))
     mapping["market_type"] = market_type
     mapping["confidence"] = confidence
     mapping["yes_token_id"] = str(mapping["yes_token_id"])
@@ -71,13 +36,27 @@ def load_valid_mappings(filename: str = DEFAULT_MARKETS_PATH) -> tuple[list[dict
     raw = load_mappings(filename)
     valid: list[dict] = []
     errors: list[MappingError] = []
+    results = validate_active_mappings([dict(m) for m in raw])
 
-    for i, mapping in enumerate(raw):
+    for i, (mapping, result) in enumerate(zip(raw, results)):
         mapping = dict(mapping)  # copy so validate_mapping's normalisation doesn't mutate the original
+        if result.mapping_errors:
+            errors.append(MappingError(index=i, name=mapping.get("name"), reason="; ".join(result.mapping_errors)))
+            continue
+
         ok, err = validate_mapping(mapping, i)
-        if ok:
-            valid.append(mapping)
-        elif err:
+        if not ok and err:
             errors.append(err)
+            continue
+
+        mapping["mapping_confidence"] = result.mapping_confidence
+        mapping["mapping_errors"] = ""
+        mapping["series_id"] = mapping.get("series_id") or result.series_id
+        mapping["series_type"] = mapping.get("series_type") if mapping.get("series_type") is not None else result.series_type
+        mapping["game_number"] = mapping.get("game_number") or result.game_number
+        mapping["team_id_match"] = result.team_id_match
+        mapping["market_game_number_match"] = result.market_game_number_match
+        mapping["duplicate_match_id_error"] = result.duplicate_match_id_error
+        valid.append(mapping)
 
     return valid, errors

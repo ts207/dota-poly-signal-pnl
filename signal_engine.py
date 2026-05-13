@@ -64,6 +64,32 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
 
 PRIMARY_TRADE_EVENTS = {name for name, spec in ACTIVE_EVENTS.items() if spec.kind == "primary"}
 
+TIER_A_EVENTS = frozenset({
+    "THRONE_EXPOSED",
+    "SECOND_T4_TOWER_FALL",
+    "OBJECTIVE_CONVERSION_T4",
+    "T3_PLUS_T4_CHAIN",
+    "OBJECTIVE_CONVERSION_T3",
+})
+TIER_B_EVENTS = frozenset({
+    "ULTRA_LATE_WIPE",
+    "LATE_GAME_WIPE",
+    "STOMP_THROW",
+    "MAJOR_COMEBACK",
+    "FIRST_T4_TOWER_FALL",
+    "ALL_T3_TOWERS_DOWN",
+    "MULTI_STRUCTURE_COLLAPSE",
+})
+TIER_C_EVENTS = frozenset({
+    "KILL_CONFIRMED_LEAD_SWING",
+    "EXTREME_LEAD_SWING_30S",
+    "LEAD_SWING_60S",
+    "LEAD_SWING_30S",
+    "KILL_BURST_30S",
+    "T2_TOWER_FALL",
+    "ALL_T2_TOWERS_DOWN",
+})
+
 SUPPRESSIONS: dict[str, set[str]] = {
     "OBJECTIVE_CONVERSION_T4": {"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"},
     "OBJECTIVE_CONVERSION_T3": {"T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN"},
@@ -109,6 +135,8 @@ _HISTORY_MAXLEN = 300
 _LEAD_SWING_TYPES = frozenset({"LEAD_SWING_30S", "LEAD_SWING_60S", "EXTREME_LEAD_SWING_30S"})
 _LEAD_SWING_THRESHOLDS = {"LEAD_SWING_30S": EVENT_LEAD_SWING_30S, "LEAD_SWING_60S": EVENT_LEAD_SWING_60S, "EXTREME_LEAD_SWING_30S": EVENT_LEAD_SWING_30S * 3}
 # Keep lead swings high-severity-only when evaluated as standalone signals.
+# Standalone lead swings still need high severity in live mode, but we allow
+# medium in paper/shadow mode for analysis.
 _HIGH_SEVERITY_ONLY = frozenset({"LEAD_SWING_30S", "LEAD_SWING_60S", "EXTREME_LEAD_SWING_30S"})
 _KILL_CONFIRMED_NW_THRESHOLD = 2500
 _KILL_BURST_MIN = 3
@@ -547,6 +575,7 @@ class EventSignalEngine:
             "decision": "paper_buy_yes",
             "reason": "event_cluster_lag_signal" if len(events) > 1 else "event_lag_signal",
             "event_type": primary_event_type,
+            "event_tier": event_tier(primary_event_type),
             "cluster_event_types": "+".join(cluster_event_types),
             "event_direction": event_direction,
             "token_id": token_id,
@@ -740,3 +769,13 @@ class EventSignalEngine:
         ms = signal.get("_cooldown_ms")
         if key and ms:
             self._last_signal_ms[key] = ms
+
+
+def event_tier(event_type: str | None) -> str:
+    if event_type in TIER_A_EVENTS:
+        return "A"
+    if event_type in TIER_B_EVENTS:
+        return "B"
+    if event_type in TIER_C_EVENTS:
+        return "C"
+    return "unknown"

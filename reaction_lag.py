@@ -372,6 +372,7 @@ def write_dynamic_csv(path: Path, rows: list[dict]):
 
 
 STALE_ASK_OUTPUT = Path("logs/stale_ask_survival.csv")
+MARKOUTS_OUTPUT = Path("logs/markouts.csv")
 
 
 def estimate_stale_ask_survival(signals_path: str | Path, books_path: str | Path, output_path: str | Path):
@@ -457,6 +458,10 @@ def estimate_stale_ask_survival(signals_path: str | Path, books_path: str | Path
                 "initial_ask": initial_ask,
                 "initial_ask_size": initial_ask_size,
                 "initial_spread": initial_spread,
+                "stale_ask_survival_ms": round(time_until_ask_above_executable * 1000, 1) if time_until_ask_above_executable is not None else None,
+                "time_until_ask_above_limit": time_until_ask_above_executable,
+                "time_until_ask_size_drops": time_until_ask_size_75pct_drop,
+                "time_until_spread_widens": time_until_spread_widens_1c,
                 "time_until_ask_above_executable_price": time_until_ask_above_executable,
                 "time_until_ask_size_75pct_drop": time_until_ask_size_75pct_drop,
                 "time_until_spread_widens_1c": time_until_spread_widens_1c,
@@ -471,11 +476,95 @@ def estimate_stale_ask_survival(signals_path: str | Path, books_path: str | Path
             writer = csv.DictWriter(f, fieldnames=[
                 "timestamp_utc", "match_id", "token_id", "event_type",
                 "executable_price", "initial_ask", "initial_ask_size", "initial_spread",
+                "stale_ask_survival_ms", "time_until_ask_above_limit",
+                "time_until_ask_size_drops", "time_until_spread_widens",
                 "time_until_ask_above_executable_price", "time_until_ask_size_75pct_drop",
                 "time_until_spread_widens_1c"
             ])
             writer.writeheader()
         print(f"wrote empty survival: {output_path}")
+
+
+def estimate_markouts(signals_path: str | Path, books_path: str | Path, output_path: str | Path):
+    signals = read_csv(signals_path)
+    books = read_csv(books_path)
+    for b in books:
+        b["_ts"] = parse_ts(b.get("timestamp_utc"))
+
+    books_by_asset = defaultdict(list)
+    for b in books:
+        asset_id = b.get("asset_id") or b.get("token_id")
+        if asset_id and b["_ts"]:
+            books_by_asset[asset_id].append(b)
+    for rows in books_by_asset.values():
+        rows.sort(key=lambda r: r["_ts"])
+
+    rows = []
+    for sig in signals:
+        if sig.get("decision") not in {"paper_entry_result", "live_attempt_result"}:
+            continue
+        if sig.get("paper_entry_result") and sig.get("paper_entry_result") != "filled":
+            continue
+        token_id = sig.get("token_id")
+        ts = parse_ts(sig.get("timestamp_utc"))
+        if not token_id or not ts:
+            continue
+        reference = fnum(sig.get("paper_fill_price")) or fnum(sig.get("live_avg_fill_price")) or fnum(sig.get("executable_price"))
+        if reference is None:
+            continue
+        asset_books = books_by_asset.get(token_id, [])
+        markouts = {}
+        for delay in (3, 10, 30):
+            row = _first_book_at_or_after(asset_books, ts, delay)
+            mid = _book_mid(row) if row else None
+            markouts[f"markout_{delay}s"] = round(mid - reference, 4) if mid is not None else None
+        rows.append({
+            "timestamp_utc": sig.get("timestamp_utc"),
+            "match_id": sig.get("match_id"),
+            "market_name": sig.get("market_name"),
+            "token_id": token_id,
+            "event_type": sig.get("event_type"),
+            "reference_price": reference,
+            "markout_3s": markouts.get("markout_3s"),
+            "markout_10s": markouts.get("markout_10s"),
+            "markout_30s": markouts.get("markout_30s"),
+        })
+
+    headers = [
+        "timestamp_utc", "match_id", "market_name", "token_id", "event_type",
+        "reference_price", "markout_3s", "markout_10s", "markout_30s",
+    ]
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({h: row.get(h) for h in headers})
+    print(f"wrote markouts: {output_path}")
+
+
+def _first_book_at_or_after(rows: list[dict], ts, delay_seconds: int) -> dict | None:
+    target = ts.timestamp() + delay_seconds
+    best = None
+    for row in rows:
+        rts = row.get("_ts")
+        if not rts:
+            continue
+        if rts.timestamp() >= target:
+            best = row
+            break
+    return best
+
+
+def _book_mid(row: dict | None) -> float | None:
+    if not row:
+        return None
+    bid = fnum(row.get("best_bid"))
+    ask = fnum(row.get("best_ask"))
+    if bid is not None and ask is not None:
+        return (bid + ask) / 2.0
+    return ask if ask is not None else bid
 
 
 def main():
@@ -499,8 +588,9 @@ def main():
         print_raw_lag_summary(raw_rows)
         print(f"wrote: {RAW_LAG_OUTPUT}")
 
-    from config import LATENCY_CSV_PATH
+    from config import LATENCY_CSV_PATH, MARKOUTS_CSV_PATH
     estimate_stale_ask_survival(LATENCY_CSV_PATH, BOOK_EVENTS_CSV_PATH, STALE_ASK_OUTPUT)
+    estimate_markouts(LATENCY_CSV_PATH, BOOK_EVENTS_CSV_PATH, MARKOUTS_CSV_PATH)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
-# Dota 2 → Polymarket Signal Bot (Guarded Live Test)
+# Dota 2 → Polymarket Signal Bot
 
 This project monitors Steam live Dota 2 game state and compares it with Polymarket order-book data to trade in-game events.
 
-This build includes a **guarded $10 live-test path**. Use with caution.
+Paper by default. Optional guarded live-path test exists and is disabled by default.
 
 ## New in latest update
 

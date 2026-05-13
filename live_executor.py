@@ -11,6 +11,7 @@ from typing import Any
 
 from config import (
     ALLOW_EVENT_TRADES,
+    ALLOW_CONFIRMATION_ONLY_LIVE_TRADES,
     ALLOW_GAME_OVER_ONLY,
     DEFAULT_MAX_FILL_PRICE,
     DISABLE_STRUCTURE_TRADES,
@@ -27,7 +28,8 @@ from config import (
     MIN_LAG,
     TRADE_EVENTS,
 )
-from signal_engine import age_ms
+from signal_engine import age_ms, event_tier
+from mapping_validator import validate_mapping_identity
 
 STRUCTURE_EVENTS = frozenset({
     "T2_TOWER_FALL",
@@ -289,6 +291,12 @@ class LiveExecutor:
         )
 
     async def try_buy(self, *, signal: dict, mapping: dict, game: dict, book_store) -> LiveOrderAttempt:
+        mapping_result = validate_mapping_identity(mapping, game)
+        if not mapping_result.ok:
+            return self._reject(
+                signal, mapping, game,
+                f"mapping_invalid:{';'.join(mapping_result.mapping_errors) or 'confidence_not_1'}",
+            )
         if not ALLOW_EVENT_TRADES:
             return self._reject(signal, mapping, game, "event_trades_disabled")
         if ALLOW_GAME_OVER_ONLY and not game.get("game_over"):
@@ -306,6 +314,8 @@ class LiveExecutor:
             return self._reject(signal, mapping, game, "structure_trade_disabled")
         if TRADE_EVENTS and not (event_type in TRADE_EVENTS or cluster_types & TRADE_EVENTS):
             return self._reject(signal, mapping, game, "event_not_allowed")
+        if event_tier(event_type) == "C" and not ALLOW_CONFIRMATION_ONLY_LIVE_TRADES:
+            return self._reject(signal, mapping, game, "confirmation_only_event")
 
         fair = _to_float(signal.get("fair_price"))
         lag = _to_float(signal.get("lag"))

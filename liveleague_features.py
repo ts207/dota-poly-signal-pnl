@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 AEGIS_ITEM_IDS = {108}
+MAX_PLAYERS_PER_SIDE = 5
 
 
 def extract_items(player: dict) -> list[int]:
@@ -27,11 +28,28 @@ def parse_players(players: list[dict]) -> list[dict]:
         items = extract_items(p)
         out.append({
             "account_id": p.get("account_id") or p.get("player_slot"),
+            "player_name": p.get("name") or p.get("player_name"),
             "hero_id": p.get("hero_id"),
             "kills": p.get("kills"),
             "deaths": p.get("death") or p.get("deaths"),
             "assists": p.get("assists"),
+            "last_hits": p.get("last_hits"),
+            "denies": p.get("denies"),
+            "gold": p.get("gold"),
+            "level": p.get("level"),
+            "gpm": p.get("gold_per_min") or p.get("gpm"),
+            "xpm": p.get("xp_per_min") or p.get("xpm"),
             "net_worth": p.get("net_worth"),
+            "item0": p.get("item0"),
+            "item1": p.get("item1"),
+            "item2": p.get("item2"),
+            "item3": p.get("item3"),
+            "item4": p.get("item4"),
+            "item5": p.get("item5"),
+            "backpack0": p.get("backpack0"),
+            "backpack1": p.get("backpack1"),
+            "backpack2": p.get("backpack2"),
+            "neutral_item": p.get("item_neutral") or p.get("neutral_item"),
             "respawn_timer": p.get("respawn_timer") or p.get("respawn_time"),
             "items": items,
             "has_aegis": bool(set(items) & AEGIS_ITEM_IDS),
@@ -75,7 +93,7 @@ def extract_liveleague_features(raw: dict, received_at_ns: int) -> dict:
         return sum(1 for p in parsed_players if (p.get("respawn_timer") or 0) >= 50)
 
     def _top3_nw(parsed_players: list[dict]) -> int:
-        nws = sorted([int(p.get("net_worth") or 0) for p in parsed_players if p.get("net_worth") is not None], reverse=True)
+        nws = _top_n_values(parsed_players, "net_worth", 3)
         return sum(nws[:3]) if nws else 0
 
     series_raw = raw.get("series_id")
@@ -102,7 +120,20 @@ def extract_liveleague_features(raw: dict, received_at_ns: int) -> dict:
         except (TypeError, ValueError):
             game_time = None
 
-    return {
+    radiant_net_worth = _sum_player_field(radiant_parsed, "net_worth")
+    dire_net_worth = _sum_player_field(dire_parsed, "net_worth")
+    radiant_level = _sum_player_field(radiant_parsed, "level")
+    dire_level = _sum_player_field(dire_parsed, "level")
+    radiant_gpm = _sum_player_field(radiant_parsed, "gpm")
+    dire_gpm = _sum_player_field(dire_parsed, "gpm")
+    radiant_xpm = _sum_player_field(radiant_parsed, "xpm")
+    dire_xpm = _sum_player_field(dire_parsed, "xpm")
+    radiant_gold = _sum_player_field(radiant_parsed, "gold")
+    dire_gold = _sum_player_field(dire_parsed, "gold")
+    radiant_top = _top_n_values(radiant_parsed, "net_worth", 3)
+    dire_top = _top_n_values(dire_parsed, "net_worth", 3)
+
+    features = {
         "received_at_ns": received_at_ns,
         "match_id": str(raw.get("match_id") or raw.get("lobby_id") or ""),
         "lobby_id": str(raw.get("lobby_id") or ""),
@@ -116,31 +147,111 @@ def extract_liveleague_features(raw: dict, received_at_ns: int) -> dict:
         "dire_team_id": dire_meta.get("team_id") if isinstance(dire_meta, dict) else None,
         "radiant_team": radiant_meta.get("team_name") if isinstance(radiant_meta, dict) else None,
         "dire_team": dire_meta.get("team_name") if isinstance(dire_meta, dict) else None,
+        "radiant_team_name": radiant_meta.get("team_name") if isinstance(radiant_meta, dict) else None,
+        "dire_team_name": dire_meta.get("team_name") if isinstance(dire_meta, dict) else None,
 
         "radiant_score": radiant.get("score"),
         "dire_score": dire.get("score"),
+        "score_diff": _diff(radiant.get("score"), dire.get("score")),
         "radiant_tower_state": radiant.get("tower_state"),
         "dire_tower_state": dire.get("tower_state"),
         "radiant_barracks_state": radiant.get("barracks_state"),
         "dire_barracks_state": dire.get("barracks_state"),
 
-        "radiant_net_worth": sum(int(p.get("net_worth") or 0) for p in radiant_parsed if p.get("net_worth") is not None),
-        "dire_net_worth": sum(int(p.get("net_worth") or 0) for p in dire_parsed if p.get("net_worth") is not None),
+        "radiant_net_worth": radiant_net_worth,
+        "dire_net_worth": dire_net_worth,
+        "net_worth_diff": _diff(radiant_net_worth, dire_net_worth),
+        "top1_net_worth_diff": _diff(_nth(radiant_top, 0), _nth(dire_top, 0)),
+        "top2_net_worth_diff": _diff(sum(radiant_top[:2]) if radiant_top else None, sum(dire_top[:2]) if dire_top else None),
+        "top3_net_worth_diff": _diff(sum(radiant_top[:3]) if radiant_top else None, sum(dire_top[:3]) if dire_top else None),
+        "level_diff": _diff(radiant_level, dire_level),
+        "gpm_diff": _diff(radiant_gpm, dire_gpm),
+        "xpm_diff": _diff(radiant_xpm, dire_xpm),
+        "gold_diff": _diff(radiant_gold, dire_gold),
 
         "radiant_players": radiant_parsed,
         "dire_players": dire_parsed,
 
         "aegis_team": aegis_team,
+        "aegis_holder_side": aegis_team,
         "aegis_holder_hero_id": aegis_holder_hero_id,
+        "radiant_has_aegis": aegis_team == "radiant",
+        "dire_has_aegis": aegis_team == "dire",
         "radiant_dead_count": radiant_dead_count,
         "dire_dead_count": dire_dead_count,
+        "dead_core_count": radiant_dead_count + dire_dead_count,
         "radiant_max_respawn": _max_respawn(radiant_parsed),
         "dire_max_respawn": _max_respawn(dire_parsed),
+        "max_respawn_timer": max(_max_respawn(radiant_parsed), _max_respawn(dire_parsed)),
         "radiant_core_dead_count": _core_dead_count(radiant_parsed),
         "dire_core_dead_count": _core_dead_count(dire_parsed),
         "radiant_top3_nw": _top3_nw(radiant_parsed),
         "dire_top3_nw": _top3_nw(dire_parsed),
     }
+
+    features.update(_flatten_players("radiant", radiant_parsed))
+    features.update(_flatten_players("dire", dire_parsed))
+    return features
+
+
+def _to_number(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sum_player_field(players: list[dict], field: str) -> int | None:
+    values = [_to_number(p.get(field)) for p in players]
+    values = [v for v in values if v is not None]
+    if not values:
+        return None
+    return int(sum(values))
+
+
+def _diff(a: Any, b: Any) -> int | None:
+    av = _to_number(a)
+    bv = _to_number(b)
+    if av is None or bv is None:
+        return None
+    return int(av - bv)
+
+
+def _top_n_values(players: list[dict], field: str, n: int) -> list[int]:
+    values = [_to_number(p.get(field)) for p in players]
+    return [int(v) for v in sorted((v for v in values if v is not None), reverse=True)[:n]]
+
+
+def _nth(values: list[int], index: int) -> int | None:
+    return values[index] if len(values) > index else None
+
+
+def _flatten_players(side: str, players: list[dict]) -> dict:
+    row: dict[str, Any] = {}
+    fields = [
+        "account_id", "player_name", "hero_id", "kills", "deaths", "assists",
+        "last_hits", "denies", "gold", "level", "gpm", "xpm", "net_worth",
+        "item0", "item1", "item2", "item3", "item4", "item5",
+        "backpack0", "backpack1", "backpack2", "neutral_item", "respawn_timer",
+    ]
+    for idx in range(MAX_PLAYERS_PER_SIDE):
+        player = players[idx] if idx < len(players) else {}
+        for field_name in fields:
+            row[f"{side}_p{idx + 1}_{field_name}"] = player.get(field_name)
+    return row
+
+
+def classify_liveleague_lag(game_time_lag_sec: float | int | None) -> str:
+    if game_time_lag_sec is None:
+        return "unknown"
+    lag = float(game_time_lag_sec)
+    if lag <= 10:
+        return "direct"
+    if lag <= 60:
+        return "prior"
+    return "background"
 
 
 def compute_derived_events(ctx: dict, game_time_sec: int | None = None) -> list[str]:

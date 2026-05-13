@@ -96,6 +96,9 @@ PNL_SUMMARY_CSV_PATH = os.getenv("PNL_SUMMARY_CSV_PATH", "logs/pnl_summary.csv")
 LATENCY_CSV_PATH = os.getenv("LATENCY_CSV_PATH", "logs/latency.csv")
 LIVE_LEAGUE_RAW_CSV_PATH = os.getenv("LIVE_LEAGUE_RAW_CSV_PATH", "logs/liveleague_raw.csv")
 LIVE_LEAGUE_FEATURES_CSV_PATH = os.getenv("LIVE_LEAGUE_FEATURES_CSV_PATH", "logs/liveleague_features.csv")
+LIVE_LEAGUE_RAW_JSONL_PATH = os.getenv("LIVE_LEAGUE_RAW_JSONL_PATH", "logs/liveleague_raw.jsonl")
+SOURCE_DELAY_CSV_PATH = os.getenv("SOURCE_DELAY_CSV_PATH", "logs/source_delay.csv")
+MARKOUTS_CSV_PATH = os.getenv("MARKOUTS_CSV_PATH", "logs/markouts.csv")
 
 if MODE not in {"paper", "live"}:
     raise RuntimeError("MODE must be paper or live-test compatible live.")
