@@ -175,6 +175,9 @@ class DotaEvent:
     event_tier: str | None = None
     event_family: str | None = None
     event_quality: float | None = None
+    component_event_types: str | None = None
+    component_deltas: str | None = None
+    component_window_sec: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -408,6 +411,7 @@ class EventDetector:
                     current_value="late_comeback_reprice",
                     delta=strongest_delta, window_sec=60, direction=direction,
                     severity="high",
+                    **_component_metadata(group),
                 ))
 
             if (
@@ -426,6 +430,7 @@ class EventDetector:
                     current_value="late_economic_crash",
                     delta=strongest_delta, window_sec=60, direction=direction,
                     severity="high",
+                    **_component_metadata(group),
                 ))
 
             if (
@@ -440,6 +445,7 @@ class EventDetector:
                     current_value="ultra_late_wipe_confirmed",
                     delta=strongest_delta, window_sec=30, direction=direction,
                     severity="high",
+                    **_component_metadata(group),
                 ))
 
             if (
@@ -454,6 +460,7 @@ class EventDetector:
                     current_value="stomp_throw_objective_risk",
                     delta=strongest_delta, window_sec=30, direction=direction,
                     severity="high",
+                    **_component_metadata(group),
                 ))
 
             if (
@@ -469,6 +476,7 @@ class EventDetector:
                     current_value="fight_to_gold_confirm",
                     delta=strongest_delta, window_sec=30, direction=direction,
                     severity="medium",
+                    **_component_metadata(group),
                 ))
 
             self._append_late_recovery(cur, direction, group, strongest_delta)
@@ -481,6 +489,7 @@ class EventDetector:
                         current_value="chained_late_fight_recovery",
                         delta=strongest_delta, window_sec=CHAINED_RECOVERY_WINDOW_SEC,
                         direction=direction, severity="high",
+                        **_component_metadata(group),
                     ))
 
         return out
@@ -909,6 +918,7 @@ class EventDetector:
                 window_sec=30,
                 direction=direction,
                 severity=severity,
+                **_component_metadata([strongest_support, strongest_tower]),
             ))
 
         return out
@@ -1036,6 +1046,14 @@ def _event_quality(event: DotaEvent) -> float:
     fight = float(event.fight_pressure_score or 0.0)
     economy = float(event.economic_pressure_score or 0.0)
     return (0.35 * base) + (0.25 * conversion) + (0.20 * fight) + (0.20 * economy)
+
+
+def _component_metadata(events: list[DotaEvent]) -> dict[str, str]:
+    return {
+        "component_event_types": "+".join(str(event.event_type) for event in events),
+        "component_deltas": "+".join("" if event.delta is None else str(event.delta) for event in events),
+        "component_window_sec": "+".join("" if event.window_sec is None else str(event.window_sec) for event in events),
+    }
 
 
 def _bit_count(value: int) -> int:

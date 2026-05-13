@@ -303,10 +303,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: ex-HEROIC
   no_team: Virtus.pro
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809710774'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-vp-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
+  auto_mapped_source: top_live
+  steam_radiant_team: Virtus.pro
+  steam_dire_team: ex-HEROIC
+  steam_side_mapping: reversed
 - name: 'Dota 2: ex-HEROIC vs Virtus.pro - Game 2 Winner'
   market_id: '2235848'
   condition_id: '0x9e77c415ba3559ed5e91d57417ba300857801326a76d5ca0351ca29798aee51c'
@@ -315,10 +320,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: ex-HEROIC
   no_team: Virtus.pro
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809797141'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-vp-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T19:02:07+00:00'
+  auto_mapped_source: live_league
+  steam_radiant_team: Virtus.pro
+  steam_dire_team: ex-HEROIC
+  steam_side_mapping: reversed
 - name: 'Dota 2: Aurora vs Team Falcons - Game 1 Winner'
   market_id: '2235827'
   condition_id: '0x4ddacf2b1125b5dd9c8c0af3b2a5a5cf0420ff4352cfa6f82accb3ba55f2ab1a'
@@ -344,10 +354,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: Aurora
   no_team: Team Falcons
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809747666'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-flc-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
+  auto_mapped_source: top_live
+  steam_radiant_team: Team Falcons
+  steam_dire_team: Aurora Gaming
+  steam_side_mapping: reversed
 - name: 'Dota 2: BetBoom Team vs REKONIX - Game 1 Winner'
   market_id: '2235787'
   condition_id: '0xfb6fc5346452a096828cc8387c350bafe3b1123602fcf8b73bf4d07534fa23ff'
@@ -402,10 +417,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: GamerLegion
   no_team: Vici Gaming
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809726019'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-gl-vg-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
+  auto_mapped_source: top_live
+  steam_radiant_team: GamerLegion
+  steam_dire_team: Vici Gaming
+  steam_side_mapping: normal
 - name: 'Dota 2: Team Spirit vs Team Liquid - Game 1 Winner'
   market_id: '2235807'
   condition_id: '0xc491a71af996ab03825ff4a5e6f3c482bc0ab13b2c1dfe571ee5b57a7ab5b8fc'
@@ -414,10 +434,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: Team Spirit
   no_team: Team Liquid
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809696561'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ts8-liquid-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
+  auto_mapped_source: top_live
+  steam_radiant_team: Team Liquid
+  steam_dire_team: Team Spirit
+  steam_side_mapping: reversed
 - name: 'Dota 2: Team Spirit vs Team Liquid - Game 2 Winner'
   market_id: '2235808'
   condition_id: '0x6737fae8bc78e46000dbd8a0604f6f0c96af8f04b71b2be59e41f25b8b1f8c03'
@@ -426,10 +451,15 @@ markets:
   market_type: MAP_WINNER
   yes_team: Team Spirit
   no_team: Team Liquid
-  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
-  confidence: 0.0
+  dota_match_id: '8809794923'
+  confidence: 1.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ts8-liquid-2026-05-13
+  auto_mapped_at_utc: '2026-05-13T19:00:10+00:00'
+  auto_mapped_source: live_league
+  steam_radiant_team: Team Liquid
+  steam_dire_team: Team Spirit
+  steam_side_mapping: reversed
 - name: 'Dota 2: PARIVISION vs BetBoom Team - Game 1 Winner'
   market_id: '2241252'
   condition_id: '0x1d18301d0eed0683e16aea9437791268b514af600b01ea0e67cd465cd4f6a2f7'

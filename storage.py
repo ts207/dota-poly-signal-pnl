@@ -243,6 +243,7 @@ class DotaEventLogger(CsvLogger):
             "timestamp_utc", "run_id", "code_version", "config_hash",
             "match_id", "lobby_id", "league_id", "mapping_name", "yes_team", "yes_token_id",
             "event_type", "event_tier", "event_is_primary", "event_family", "event_quality", "event_dedupe_key",
+            "component_event_types", "component_deltas", "component_window_sec",
             "severity", "game_time_sec", "radiant_team", "dire_team",
             "radiant_lead", "radiant_score", "dire_score", "tower_state",
             "previous_value", "current_value", "delta", "window_sec", "threshold", "direction",

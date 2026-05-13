@@ -262,6 +262,9 @@ def test_detects_late_major_comeback_reprice():
     assert evt.direction == "radiant"
     assert evt.event_tier == "B"
     assert evt.event_family == "late_reversal"
+    assert evt.component_event_types
+    assert "MAJOR_COMEBACK" in evt.component_event_types
+    assert "LEAD_SWING_60S" in evt.component_event_types
 
 
 def test_detects_ultra_late_wipe_confirmed_with_base_pressure():
@@ -288,6 +291,7 @@ def test_detects_fight_to_gold_confirm_research_event():
     assert evt.direction == "radiant"
     assert evt.event_tier == "research"
     assert evt.event_is_primary is False
+    assert evt.component_deltas
 
 
 def test_detects_chained_late_fight_recovery():

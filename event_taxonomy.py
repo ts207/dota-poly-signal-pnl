@@ -37,6 +37,7 @@ TIER_C_EVENTS = frozenset({
 })
 
 RESEARCH_EVENTS = frozenset({
+    "OBJECTIVE_CONVERSION_T2",
     "FIGHT_TO_GOLD_CONFIRM_30S",
     "LOW_PRICE_UNDERDOG_COUNTERPUNCH",
     "LATE_CHEAP_LEAD_SWING_REPRICE",
@@ -71,6 +72,7 @@ EVENT_FAMILY: dict[str, str] = {
     "OBJECTIVE_CONVERSION_T4": "fight_objective_conversion",
     "T3_PLUS_T4_CHAIN": "fight_objective_conversion",
     "OBJECTIVE_CONVERSION_T3": "fight_objective_conversion",
+    "OBJECTIVE_CONVERSION_T2": "research",
     "LATE_MAJOR_COMEBACK_REPRICE": "late_reversal",
     "CHAINED_LATE_FIGHT_RECOVERY": "late_reversal",
     "LATE_ECONOMIC_CRASH": "late_reversal",

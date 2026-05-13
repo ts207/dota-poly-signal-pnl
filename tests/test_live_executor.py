@@ -232,3 +232,22 @@ async def test_live_executor_rejects_terminal_price_chasing_before_submit(monkey
     )
     assert attempt.order_status == "rejected_precheck"
     assert attempt.reason_if_rejected == "chasing_terminal_price"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("event_type", [
+    "FIGHT_TO_GOLD_CONFIRM_30S",
+    "LOW_PRICE_UNDERDOG_COUNTERPUNCH",
+    "LATE_CHEAP_LEAD_SWING_REPRICE",
+])
+async def test_live_executor_rejects_research_events_even_if_allowlisted(monkeypatch, event_type):
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {event_type})
+    executor = LiveExecutor(client=FakeLiveClient())
+    attempt = await executor.try_buy(
+        signal=_signal(event_type=event_type, cluster_event_types=event_type),
+        mapping=_mapping(),
+        game=_game(),
+        book_store=_book_store(),
+    )
+    assert attempt.order_status == "rejected_precheck"
+    assert attempt.reason_if_rejected == "research_event_not_live_tradable"

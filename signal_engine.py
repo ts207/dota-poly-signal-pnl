@@ -23,7 +23,6 @@ class EventSpec:
     base: float
     cap: float
     half_life_sec: float
-    kind: str
 
 
 # Final fast-API event model. Ancient/game-over is intentionally NOT here:
@@ -33,40 +32,40 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
     # window as a same-direction kill/networth swing. They score above raw
     # structure events because the objective was converted from pressure, not
     # merely taken by split-push noise.
-    "OBJECTIVE_CONVERSION_T4":   EventSpec(0.36, 0.65, 2.0,  "primary"),
-    "OBJECTIVE_CONVERSION_T3":   EventSpec(0.18, 0.38, 5.0,  "primary"),
-    "OBJECTIVE_CONVERSION_T2":   EventSpec(0.075,0.16, 8.0,  "primary"),
+    "OBJECTIVE_CONVERSION_T4":   EventSpec(0.36, 0.65, 2.0),
+    "OBJECTIVE_CONVERSION_T3":   EventSpec(0.18, 0.38, 5.0),
+    "OBJECTIVE_CONVERSION_T2":   EventSpec(0.075, 0.16, 8.0),
 
-    "THRONE_EXPOSED":            EventSpec(0.35, 0.70, 1.5,  "primary"),
-    "SECOND_T4_TOWER_FALL":      EventSpec(0.32, 0.65, 2.0,  "primary"),
-    "FIRST_T4_TOWER_FALL":       EventSpec(0.22, 0.48, 3.0,  "primary"),
-    "T3_PLUS_T4_CHAIN":          EventSpec(0.28, 0.55, 3.0,  "primary"),
-    "MULTI_STRUCTURE_COLLAPSE":  EventSpec(0.22, 0.45, 4.0,  "primary"),
-    "ULTRA_LATE_WIPE":           EventSpec(0.22, 0.48, 4.0,  "primary"),
-    "ULTRA_LATE_WIPE_CONFIRMED": EventSpec(0.24, 0.52, 4.0,  "primary"),
-    "LATE_GAME_WIPE":            EventSpec(0.15, 0.36, 5.0,  "primary"),
-    "STOMP_THROW":               EventSpec(0.14, 0.36, 10.0, "primary"),
-    "STOMP_THROW_WITH_OBJECTIVE_RISK": EventSpec(0.18, 0.40, 8.0, "primary"),
-    "LATE_MAJOR_COMEBACK_REPRICE": EventSpec(0.16, 0.36, 8.0, "primary"),
-    "CHAINED_LATE_FIGHT_RECOVERY": EventSpec(0.14, 0.32, 8.0, "primary"),
-    "LATE_ECONOMIC_CRASH":       EventSpec(0.13, 0.30, 8.0,  "primary"),
-    "ALL_T3_TOWERS_DOWN":        EventSpec(0.18, 0.40, 5.0,  "primary"),
-    "MULTIPLE_T3_TOWERS_DOWN":   EventSpec(0.15, 0.30, 7.0,  "primary"),
-    "T3_TOWER_FALL":             EventSpec(0.09, 0.22, 7.0,  "primary"),
-    "MAJOR_COMEBACK":            EventSpec(0.15, 0.32, 18.0, "primary"),
-    "EXTREME_LEAD_SWING_30S":   EventSpec(0.12, 0.28, 10.0, "primary"),
-    "KILL_CONFIRMED_LEAD_SWING": EventSpec(0.09, 0.22, 12.0, "primary"),
-    "LEAD_SWING_60S":            EventSpec(0.05, 0.12, 15.0, "primary"),
-    "LEAD_SWING_30S":            EventSpec(0.06, 0.15, 15.0, "primary"),
-    "KILL_BURST_30S":            EventSpec(0.025, 0.12, 6.0,  "primary"),
+    "THRONE_EXPOSED":            EventSpec(0.35, 0.70, 1.5),
+    "SECOND_T4_TOWER_FALL":      EventSpec(0.32, 0.65, 2.0),
+    "FIRST_T4_TOWER_FALL":       EventSpec(0.22, 0.48, 3.0),
+    "T3_PLUS_T4_CHAIN":          EventSpec(0.28, 0.55, 3.0),
+    "MULTI_STRUCTURE_COLLAPSE":  EventSpec(0.22, 0.45, 4.0),
+    "ULTRA_LATE_WIPE":           EventSpec(0.22, 0.48, 4.0),
+    "ULTRA_LATE_WIPE_CONFIRMED": EventSpec(0.24, 0.52, 4.0),
+    "LATE_GAME_WIPE":            EventSpec(0.15, 0.36, 5.0),
+    "STOMP_THROW":               EventSpec(0.14, 0.36, 10.0),
+    "STOMP_THROW_WITH_OBJECTIVE_RISK": EventSpec(0.18, 0.40, 8.0),
+    "LATE_MAJOR_COMEBACK_REPRICE": EventSpec(0.16, 0.36, 8.0),
+    "CHAINED_LATE_FIGHT_RECOVERY": EventSpec(0.14, 0.32, 8.0),
+    "LATE_ECONOMIC_CRASH":       EventSpec(0.13, 0.30, 8.0),
+    "ALL_T3_TOWERS_DOWN":        EventSpec(0.18, 0.40, 5.0),
+    "MULTIPLE_T3_TOWERS_DOWN":   EventSpec(0.15, 0.30, 7.0),
+    "T3_TOWER_FALL":             EventSpec(0.09, 0.22, 7.0),
+    "MAJOR_COMEBACK":            EventSpec(0.15, 0.32, 18.0),
+    "EXTREME_LEAD_SWING_30S":   EventSpec(0.12, 0.28, 10.0),
+    "KILL_CONFIRMED_LEAD_SWING": EventSpec(0.09, 0.22, 12.0),
+    "LEAD_SWING_60S":            EventSpec(0.05, 0.12, 15.0),
+    "LEAD_SWING_30S":            EventSpec(0.06, 0.15, 15.0),
+    "KILL_BURST_30S":            EventSpec(0.025, 0.12, 6.0),
 
     # Confirmation / lower-confidence events. main.py uses cluster scoring and
-    "T2_TOWER_FALL":             EventSpec(0.035, 0.08, 10.0, "confirmation"),
-    "COMEBACK":                  EventSpec(0.040, 0.12, 12.0, "confirmation"),
-    "FIGHT_TO_GOLD_CONFIRM_30S": EventSpec(0.050, 0.12, 6.0, "confirmation"),
+    "T2_TOWER_FALL":             EventSpec(0.035, 0.08, 10.0),
+    "COMEBACK":                  EventSpec(0.040, 0.12, 12.0),
+    "FIGHT_TO_GOLD_CONFIRM_30S": EventSpec(0.050, 0.12, 6.0),
     # Map-control context only: useful as support for sizing/edge, not a standalone live trigger.
-    "MULTIPLE_T2_TOWERS_DOWN":   EventSpec(0.035, 0.08, 12.0, "confirmation"),
-    "ALL_T2_TOWERS_DOWN":        EventSpec(0.050, 0.12, 15.0, "confirmation"),
+    "MULTIPLE_T2_TOWERS_DOWN":   EventSpec(0.035, 0.08, 12.0),
+    "ALL_T2_TOWERS_DOWN":        EventSpec(0.050, 0.12, 15.0),
 }
 
 PRIMARY_TRADE_EVENTS = set(TIER_A_EVENTS | TIER_B_EVENTS)

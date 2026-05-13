@@ -322,8 +322,11 @@ class LiveExecutor:
             return self._reject(signal, mapping, game, "structure_trade_disabled")
         if TRADE_EVENTS and not (event_type in TRADE_EVENTS or cluster_types & TRADE_EVENTS):
             return self._reject(signal, mapping, game, "event_not_allowed")
-        if event_tier(event_type) == "C" and not ALLOW_CONFIRMATION_ONLY_LIVE_TRADES:
+        tier = event_tier(event_type)
+        if tier == "C" and not ALLOW_CONFIRMATION_ONLY_LIVE_TRADES:
             return self._reject(signal, mapping, game, "confirmation_only_event")
+        if tier in {"research", "block", "unknown"}:
+            return self._reject(signal, mapping, game, f"{tier}_event_not_live_tradable")
 
         fair = _to_float(signal.get("fair_price"))
         lag = _to_float(signal.get("lag"))
