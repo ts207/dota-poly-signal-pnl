@@ -530,11 +530,12 @@ class EventSignalEngine:
         execution_scores = _execution_quality_scores(book_age, spread, ask, ask_size)
 
         if ask < MIN_FILL_PRICE:
-            return {"decision": "skip", "reason": "fill_price_too_low", "ask": ask, "mid": mid}
+            return {"decision": "skip", "reason": "fill_price_too_low", **base_metadata, "ask": ask, "mid": mid}
 
         if ask >= 0.97 and primary_event_type != "THRONE_EXPOSED":
             return {
                 "decision": "skip", "reason": "chasing_terminal_price",
+                **base_metadata,
                 "ask": ask, "mid": mid, "event_type": primary_event_type,
                 "event_tier": event_tier(primary_event_type), "event_family": event_family(primary_event_type),
                 "event_quality": event_quality, **execution_scores,
@@ -549,6 +550,7 @@ class EventSignalEngine:
         ):
             return {
                 "decision": "skip", "reason": "priced_out_high_ground_stomp",
+                **base_metadata,
                 "ask": ask, "mid": mid, "event_type": primary_event_type,
                 "event_tier": event_tier(primary_event_type), "event_family": event_family(primary_event_type),
                 "event_quality": event_quality, **execution_scores,
@@ -557,7 +559,9 @@ class EventSignalEngine:
         max_fill = _EVENT_MAX_FILL.get(primary_event_type, DEFAULT_MAX_FILL_PRICE)
         if ask > max_fill:
             return {
-                "decision": "skip", "reason": "fill_price_too_high", "ask": ask, "mid": mid,
+                "decision": "skip", "reason": "fill_price_too_high",
+                **base_metadata,
+                "ask": ask, "mid": mid,
                 "event_type": primary_event_type, "event_tier": event_tier(primary_event_type),
                 "event_family": event_family(primary_event_type), "event_quality": event_quality,
                 **execution_scores,
@@ -566,6 +570,7 @@ class EventSignalEngine:
         if primary_event_type in {"COMEBACK", "MAJOR_COMEBACK", "LATE_MAJOR_COMEBACK_REPRICE"} and spread is not None and spread > 0.08:
             return {
                 "decision": "skip", "reason": "wide_spread_comeback_alert",
+                **base_metadata,
                 "spread": spread, "ask": ask, "mid": mid, "event_type": primary_event_type,
                 "event_tier": event_tier(primary_event_type), "event_family": event_family(primary_event_type),
                 "event_quality": event_quality, **execution_scores,
@@ -574,6 +579,7 @@ class EventSignalEngine:
         if spread is not None and spread > MAX_SPREAD:
             return {
                 "decision": "skip", "reason": "spread_too_wide", "spread": spread,
+                **base_metadata,
                 "event_type": primary_event_type, "event_tier": event_tier(primary_event_type),
                 "event_family": event_family(primary_event_type), "event_quality": event_quality,
                 **execution_scores,
@@ -582,6 +588,7 @@ class EventSignalEngine:
         if ask_size is not None and ask * float(ask_size) < MIN_ASK_SIZE_USD:
             return {
                 "decision": "skip", "reason": "insufficient_ask_size",
+                **base_metadata,
                 "event_type": primary_event_type, "event_tier": event_tier(primary_event_type),
                 "event_family": event_family(primary_event_type), "event_quality": event_quality,
                 **execution_scores,
@@ -592,11 +599,11 @@ class EventSignalEngine:
         now_ms = int(time.time() * 1000)
         cooldown_ms = max(60_000, int(PRICE_LOOKBACK_SEC * 1000))
         if now_ms - self._last_signal_ms.get(cooldown_key, 0) < cooldown_ms:
-            return {"decision": "skip", "reason": "cooldown"}
+            return {"decision": "skip", "reason": "cooldown", **base_metadata}
 
         current_price = self._current_price(token_id)
         if current_price is None:
-            return {"decision": "skip", "reason": "no_price_history"}
+            return {"decision": "skip", "reason": "no_price_history", **base_metadata}
 
         # 1. Repricing check: if the market already moved significantly in the
         # last 30s (Steam's typical delay window), the edge is likely gone.
@@ -607,6 +614,7 @@ class EventSignalEngine:
             if recent_repriced_move > (MIN_LAG * 0.75):
                 return {
                     "decision": "skip", "reason": "already_repriced",
+                    **base_metadata,
                     "move_30s": round(recent_repriced_move, 4),
                     "current_price": round(current_price, 4),
                     "anchor_30s": round(anchor_30s, 4),
@@ -616,7 +624,7 @@ class EventSignalEngine:
         if anchor_price is None:
             anchor_price = self._pregame_price.get(token_id)
             if anchor_price is None:
-                return {"decision": "skip", "reason": "insufficient_price_history"}
+                return {"decision": "skip", "reason": "insufficient_price_history", **base_metadata}
 
         adjusted_values = [self._adjusted_event_value(e, game) for e in events]
         expected_move = self._combine_event_impacts(adjusted_values)
@@ -702,6 +710,7 @@ class EventSignalEngine:
             if recent_move < -MIN_LAG:
                 return {
                     "decision": "skip", "reason": "adverse_market_move",
+                    **base_metadata,
                     "lag": round(lag, 4), "expected_move": round(expected_move, 4),
                     "market_move_3s": round(recent_move, 4),
                 }

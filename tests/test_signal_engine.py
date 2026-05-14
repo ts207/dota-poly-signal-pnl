@@ -87,6 +87,8 @@ def test_default_fill_cap_blocks_lower_priority_events():
     )
     assert result["decision"] == "skip"
     assert result["reason"] == "fill_price_too_high"
+    assert result["token_id"] == TOKEN_YES
+    assert result["side"] == "YES"
 
 
 def test_first_t4_has_event_specific_fill_cap_above_default():
@@ -108,6 +110,8 @@ def test_first_t4_still_respects_event_specific_fill_cap():
     )
     assert result["decision"] == "skip"
     assert result["reason"] == "fill_price_too_high"
+    assert result["token_id"] == TOKEN_YES
+    assert result["side"] == "YES"
 
 
 def test_barracks_fall_is_inactive():
@@ -448,6 +452,25 @@ def test_stale_book_skip_includes_rescue_metadata():
     assert result["decision"] == "skip"
     assert result["reason"] == "book_stale"
     assert result["event_tier"] == "B"
+    assert result["token_id"] == TOKEN_YES
+    assert result["side"] == "YES"
+
+
+def test_already_repriced_skip_keeps_side_metadata_for_adverse_exit():
+    now_ns = time.time_ns()
+    engine = EventSignalEngine()
+    engine.record_price(TOKEN_YES, 0.45)
+    engine._price_history[TOKEN_YES][0] = (int(time.time() * 1000) - 31_000, 0.45)
+    engine.record_price(TOKEN_YES, 0.55)
+
+    result = engine.evaluate(
+        "TEAMFIGHT_SWING_30S", "radiant", 3,
+        _game(now_ns, game_time_sec=1200), _mapping(), _book(now_ns, ask=0.56, bid=0.54), None,
+        severity="medium",
+    )
+
+    assert result["decision"] == "skip"
+    assert result["reason"] == "already_repriced"
     assert result["token_id"] == TOKEN_YES
     assert result["side"] == "YES"
 

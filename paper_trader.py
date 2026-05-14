@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import csv
 import time
 from dataclasses import dataclass, asdict
+from datetime import datetime, timezone
 from typing import Any
 
 from config import (
     PAPER_SLIPPAGE_CENTS, PAPER_TRADE_SIZE_USD, MAX_OPEN_USD_PER_MATCH,
     EXIT_TAKE_PROFIT, EXIT_STOP_LOSS_ABS, EXIT_STOP_LOSS_REL,
-    EXIT_HORIZON_SEC, EXIT_HORIZON_BY_EVENT, MAX_HOLD_HOURS,
+    EXIT_LATENCY_EDGE_SEC, EXIT_HORIZON_SEC, EXIT_HORIZON_BY_EVENT, MAX_HOLD_HOURS,
     PAPER_REENTRY_COOLDOWN_SEC,
 )
 
@@ -67,11 +69,11 @@ class PaperTrader:
     Opposing-side guard: refuses entry if the binary market's other token is already open.
 
     Exit priority (checked in order each cycle):
-      1. take_profit  — current bid >= entry_price + expected_move (signal target), capped at EXIT_TAKE_PROFIT
-      2. stop_loss    — bid <= max(EXIT_STOP_LOSS_ABS, entry - min(EXIT_STOP_LOSS_REL, expected_move))
-      3. horizon      — position age >= EXIT_HORIZON_BY_EVENT[event_type] (per-event calibrated)
-      4. game_over    — game ended (settled at current bid)
-      5. max_hold     — safety net if game_over never fires (stale Steam data)
+      1. take_profit/model_value — bid reaches current model fair / target
+      2. stop_loss               — bid violates the risk floor
+      3. latency_edge_timeout    — average stale-edge window elapsed
+      4. horizon                 — event-specific safety timeout
+      5. game_over/max_hold      — terminal safety exits
 
     Adverse event exit: when an event fires against an open position, main.py calls
     force_exit() before attempting to enter the opposing side.
@@ -90,6 +92,80 @@ class PaperTrader:
         self._match_open_usd: dict[str, float] = {}
         # token_id → earliest next entry time after a close
         self._token_cooldown_until_ns: dict[str, int] = {}
+
+    def load_open_positions(self, filename: str) -> int:
+        """Restore open paper positions by replaying the trade CSV."""
+        try:
+            with open(filename, newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+        except FileNotFoundError:
+            return 0
+
+        self.positions.clear()
+        self._match_open_usd.clear()
+
+        for row in rows:
+            token_id = str(row.get("token_id") or "")
+            if not token_id:
+                continue
+
+            action = str(row.get("action") or "").lower()
+            if action == "exit":
+                self.positions.pop(token_id, None)
+                self._rebuild_match_open_usd()
+                continue
+            if action != "entry":
+                continue
+
+            pos = self._position_from_trade_row(row)
+            if pos is None:
+                continue
+            self.positions[token_id] = pos
+            self._rebuild_match_open_usd()
+
+        return len(self.positions)
+
+    def _rebuild_match_open_usd(self) -> None:
+        self._match_open_usd = {}
+        for pos in self.positions.values():
+            self._match_open_usd[pos.match_id] = self._match_open_usd.get(pos.match_id, 0.0) + pos.cost_usd
+
+    def _position_from_trade_row(self, row: dict[str, str]) -> Position | None:
+        try:
+            entry_price = float(row.get("entry_price") or 0)
+            expected_move = float(row.get("expected_move") or 0)
+            return Position(
+                token_id=str(row.get("token_id") or ""),
+                match_id=str(row.get("match_id") or ""),
+                market_name=row.get("market_name") or None,
+                side=str(row.get("side") or ""),
+                entry_price=entry_price,
+                shares=float(row.get("shares") or 0),
+                cost_usd=float(row.get("cost_usd") or 0),
+                entry_time_ns=self._parse_trade_time_ns(row.get("timestamp_utc")),
+                entry_game_time_sec=self._optional_int(row.get("entry_game_time_sec")),
+                event_type=str(row.get("event_type") or ""),
+                lag=float(row.get("lag") or 0),
+                expected_move=expected_move,
+                fair_price=entry_price + expected_move if expected_move > 0 else entry_price,
+            )
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _optional_int(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        return int(float(value))
+
+    @staticmethod
+    def _parse_trade_time_ns(value: str | None) -> int:
+        if not value:
+            return time.time_ns()
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp() * 1_000_000_000)
 
     def enter(
         self,
@@ -249,6 +325,8 @@ class PaperTrader:
                     to_close.append((token_id, exit_px, "model_value_exit"))
                 elif exit_px <= stop_price:
                     to_close.append((token_id, exit_px, "stop_loss"))
+                elif EXIT_LATENCY_EDGE_SEC > 0 and age_sec >= EXIT_LATENCY_EDGE_SEC:
+                    to_close.append((token_id, exit_px, "latency_edge_timeout"))
                 elif event_horizon > 0 and age_sec >= event_horizon:
                     to_close.append((token_id, exit_px, "horizon"))
                 elif pos.match_id in game_over_match_ids:

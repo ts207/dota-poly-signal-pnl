@@ -14,6 +14,7 @@ from config import (
 )
 
 RAW_SNAPSHOTS_CSV_PATH = "logs/raw_snapshots.csv"
+SIGNAL_MARKOUTS_CSV_PATH = "logs/signal_markouts.csv"
 
 
 def utc_now_iso() -> str:
@@ -26,11 +27,19 @@ def ns_to_iso(ns: int | None) -> str | None:
     return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).isoformat(timespec="milliseconds")
 
 
+import queue
+import threading
+
+
 class CsvLogger:
     def __init__(self, filename: str, headers: list[str]):
         self.filename = filename
         self.headers = headers
+        self._queue = queue.Queue()
+        self._stop_event = threading.Event()
         self._init_file()
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
 
     def _init_file(self):
         parent = os.path.dirname(self.filename)
@@ -52,16 +61,29 @@ class CsvLogger:
             return False
         return existing == self.headers
 
+    def _worker(self):
+        while not self._stop_event.is_set() or not self._queue.empty():
+            try:
+                row = self._queue.get(timeout=1.0)
+                with open(self.filename, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=self.headers)
+                    writer.writerow(row)
+                self._queue.task_done()
+            except queue.Empty:
+                continue
+
     def append(self, row: dict):
         clean = {key: row.get(key) for key in self.headers}
-        with open(self.filename, "a", newline="", encoding="utf-8") as f:
-            csv.DictWriter(f, fieldnames=self.headers).writerow(clean)
+        self._queue.put(clean)
 
     def append_many(self, rows: Iterable[dict]):
-        with open(self.filename, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=self.headers)
-            for row in rows:
-                writer.writerow({key: row.get(key) for key in self.headers})
+        for row in rows:
+            self.append(row)
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread.is_alive():
+            self._thread.join()
 
 
 class SignalLogger(CsvLogger):
@@ -539,6 +561,40 @@ class BookRefreshRescueLogger(CsvLogger):
         ])
 
     def log_rescue(self, row: dict) -> None:
+        row["timestamp_utc"] = utc_now_iso()
+        self.append(row)
+
+
+class SignalMarkoutLogger(CsvLogger):
+    def __init__(self, filename: str = SIGNAL_MARKOUTS_CSV_PATH):
+        super().__init__(filename, [
+            "timestamp_utc",
+            "signal_timestamp_utc",
+            "match_id",
+            "market_name",
+            "event_type",
+            "event_tier",
+            "event_is_primary",
+            "event_direction",
+            "token_id",
+            "side",
+            "decision",
+            "skip_reason",
+            "reference_price",
+            "reference_bid",
+            "reference_ask",
+            "fair_price",
+            "hybrid_fair",
+            "executable_edge",
+            "markout_3s",
+            "markout_10s",
+            "markout_30s",
+            "edge_after_3s",
+            "edge_after_10s",
+            "edge_after_30s",
+        ])
+
+    def log_markout(self, row: dict) -> None:
         row["timestamp_utc"] = utc_now_iso()
         self.append(row)
 

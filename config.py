@@ -91,6 +91,9 @@ PAPER_REENTRY_COOLDOWN_SEC = float(os.getenv("PAPER_REENTRY_COOLDOWN_SEC", "300"
 EXIT_TAKE_PROFIT   = float(os.getenv("EXIT_TAKE_PROFIT",    "0.95"))   # absolute max TP (game-over)
 EXIT_STOP_LOSS_ABS = float(os.getenv("EXIT_STOP_LOSS_ABS",  "0.05"))   # floor price
 EXIT_STOP_LOSS_REL = float(os.getenv("EXIT_STOP_LOSS_REL",  "0.10"))   # max loss from entry; capped at expected_move
+# If the average market-latency edge window passes before price reaches model
+# value, close and stop waiting for the original stale edge to materialize.
+EXIT_LATENCY_EDGE_SEC = int(os.getenv("EXIT_LATENCY_EDGE_SEC", "30"))
 # Time-based exit: per-event horizons calibrated to each event's repricing speed.
 # Fallback EXIT_HORIZON_SEC applies for unknown event types or when 0 (disabled).
 EXIT_HORIZON_SEC   = int(os.getenv("EXIT_HORIZON_SEC",      "120"))

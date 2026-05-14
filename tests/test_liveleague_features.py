@@ -291,6 +291,40 @@ def test_attach_to_game_fresh_context():
     assert result["game_time_lag_sec"] == -2
 
 
+def test_attach_to_game_logs_full_feature_row():
+    class FakeFeatureLogger:
+        def __init__(self):
+            self.rows = []
+
+        def log_features(self, row):
+            self.rows.append(row)
+
+    cache = LiveLeagueContextCache()
+    received_at_ns = time.time_ns()
+    raw = _make_raw()
+    cache.update([raw], received_at_ns)
+    logger = FakeFeatureLogger()
+
+    cache.attach_to_game(
+        {
+            "match_id": "12345",
+            "game_time_sec": 1800,
+            "received_at_ns": received_at_ns,
+            "radiant_team": "Team Radiant",
+            "dire_team": "Team Dire",
+        },
+        feature_logger=logger,
+    )
+
+    assert len(logger.rows) == 1
+    row = logger.rows[0]
+    assert row["score_diff"] == 5
+    assert row["net_worth_diff"] == 3000
+    assert row["top1_net_worth_diff"] == 1500
+    assert row["radiant_p1_net_worth"] == 5000
+    assert row["dire_p1_net_worth"] == 3500
+
+
 def test_attach_to_game_missing_context():
     cache = LiveLeagueContextCache()
     game = {"match_id": "nonexistent", "game_time_sec": 100}
@@ -298,7 +332,7 @@ def test_attach_to_game_missing_context():
     assert result["liveleague_context_status"] == "missing"
 
 
-def test_stale_context_does_not_affect_signal_decision():
+def test_dead_context_does_not_attach_to_signal_decision():
     cache = LiveLeagueContextCache()
     received_at_ns = time.time_ns() - 120_000_000_000  # 120 seconds ago
     raw = _make_raw()
@@ -314,11 +348,49 @@ def test_stale_context_does_not_affect_signal_decision():
     }
     cache.attach_to_game(game)
 
-    # Stale context: age > 3000ms
+    assert game["liveleague_context_status"] == "dead"
+    assert game.get("liveleague_context") is None
+    assert game["liveleague_derived_events"] == []
+
+
+def test_delayed_but_wall_fresh_context_still_attaches():
+    cache = LiveLeagueContextCache()
+    received_at_ns = time.time_ns()
+    raw = _make_raw()
+    raw["scoreboard"]["duration"] = 900
+    cache.update([raw], received_at_ns)
+
+    game = {
+        "match_id": "12345",
+        "game_time_sec": 1800,
+        "received_at_ns": time.time_ns(),
+        "radiant_team": "Team Radiant",
+        "dire_team": "Team Dire",
+    }
+    cache.attach_to_game(game)
+
     assert game["liveleague_context_status"] == "stale"
-    # Even with stale context, the game dict should not have trading-relevant fields changed
-    # The signal decision path must check liveleague_context_status before using any LLG data
     assert game.get("liveleague_context") is not None
+    assert game["game_time_lag_sec"] == 900
+
+
+def test_future_context_timestamp_clamps_age_to_zero():
+    cache = LiveLeagueContextCache()
+    received_at_ns = time.time_ns() + 1_000_000_000
+    raw = _make_raw()
+    raw["scoreboard"]["duration"] = 900
+    cache.update([raw], received_at_ns)
+
+    game = {
+        "match_id": "12345",
+        "game_time_sec": 1800,
+        "received_at_ns": time.time_ns(),
+        "radiant_team": "Team Radiant",
+        "dire_team": "Team Dire",
+    }
+    cache.attach_to_game(game)
+
+    assert game["liveleague_age_ms"] == 0.0
 
 
 def test_validate_mapping_no_mismatch():

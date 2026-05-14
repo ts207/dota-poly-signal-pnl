@@ -38,6 +38,7 @@ def compute_hybrid_nowcast(
     slow_model_fair: float | None = None,
     event_only_fair: float | None = None,
     game_time_sec: int | None = None,
+    event_direction: str | None = None,
 ) -> HybridNowcast:
     """Fair-value combiner using RealtimeStats as the slow anchor.
 
@@ -82,21 +83,24 @@ def compute_hybrid_nowcast(
         top_lead = latest_toplive_snapshot.get("radiant_lead")
         rt_lead = latest_toplive_snapshot.get("realtime_lead_nw")
         if top_lead is not None and rt_lead is not None:
-            drift = float(top_lead - rt_lead)
+            radiant_drift = float(top_lead - rt_lead)
+            direction = event_direction or (_event_attr(events[0], "direction", None) if events else None)
+            drift = -radiant_drift if direction == "dire" else radiant_drift
             
-            # 1. Gold Elasticity (1k gold matters more at 10m than 50m)
-            # Baseline: 1% per 1k. Decay to 0.4% per 1k at 60m.
+            # 1. Gold elasticity: probability points per 1k gold.
+            # Baseline is 1% per 1k and decays as the game gets later.
             minute = (game_time_sec or 1800) / 60.0
-            elasticity = 0.01 * (0.5 ** (minute / 45.0))
+            elasticity_per_1k = 0.01 * (0.5 ** (minute / 45.0))
             
             # 2. Diminishing Returns (Square-root scaling for extreme swings)
             # Small drifts (<3k) are linear; larger drifts use root-scaling.
             if abs(drift) < 3000:
-                raw_drift_move = drift * elasticity
+                raw_drift_move = (drift / 1000.0) * elasticity_per_1k
             else:
-                # 3000 * elasticity + root(excess) * elasticity
+                # First 3k is linear; extra drift has diminishing returns.
                 sign = 1.0 if drift > 0 else -1.0
-                raw_drift_move = sign * (3000 * elasticity + (abs(drift) - 3000)**0.5 * 100 * elasticity)
+                extra_1k_equiv = ((abs(drift) - 3000) ** 0.5) / (1000 ** 0.5)
+                raw_drift_move = sign * (3.0 + extra_1k_equiv) * elasticity_per_1k
             
             # 3. Buyback Damping (Inferred)
             # If the drift is massive but the drift-team has multiple deaths in RealtimeStats,

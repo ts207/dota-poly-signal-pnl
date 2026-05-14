@@ -5,6 +5,7 @@ from typing import Any
 
 AEGIS_ITEM_IDS = {117}
 MAX_PLAYERS_PER_SIDE = 5
+MAX_CONTEXT_WALL_AGE_MS = 60_000
 
 
 def first_present(*values):
@@ -320,7 +321,7 @@ class LiveLeagueContextCache:
             return game
 
         now_ns = time.time_ns()
-        ctx_age_ms = (now_ns - ctx.get("received_at_ns", now_ns)) / 1_000_000
+        ctx_age_ms = max(0.0, (now_ns - ctx.get("received_at_ns", now_ns)) / 1_000_000)
         ctx_gt = ctx.get("game_time_sec")
         game_gt = game.get("game_time_sec")
 
@@ -333,6 +334,12 @@ class LiveLeagueContextCache:
             game["game_time_lag_sec"] = game_gt - ctx_gt
         else:
             game["game_time_lag_sec"] = None
+
+        if ctx_age_ms > MAX_CONTEXT_WALL_AGE_MS:
+            game.pop("liveleague_context", None)
+            game["liveleague_context_status"] = "dead"
+            game["liveleague_derived_events"] = []
+            return game
 
         ctx_fresh = (
             ctx_age_ms <= 3000
@@ -349,37 +356,10 @@ class LiveLeagueContextCache:
         game["liveleague_derived_events"] = derived
 
         if feature_logger is not None:
-            log_row = {
-                "match_id": mid,
-                "lobby_id": ctx.get("lobby_id"),
-                "league_id": ctx.get("league_id"),
-                "series_id": ctx.get("series_id"),
-                "series_type": ctx.get("series_type"),
-                "game_time_sec": ctx_gt,
-                "radiant_team": ctx.get("radiant_team"),
-                "dire_team": ctx.get("dire_team"),
-                "radiant_score": ctx.get("radiant_score"),
-                "dire_score": ctx.get("dire_score"),
-                "radiant_tower_state": ctx.get("radiant_tower_state"),
-                "dire_tower_state": ctx.get("dire_tower_state"),
-                "radiant_barracks_state": ctx.get("radiant_barracks_state"),
-                "dire_barracks_state": ctx.get("dire_barracks_state"),
-                "radiant_net_worth": ctx.get("radiant_net_worth"),
-                "dire_net_worth": ctx.get("dire_net_worth"),
-                "radiant_dead_count": ctx.get("radiant_dead_count"),
-                "dire_dead_count": ctx.get("dire_dead_count"),
-                "radiant_max_respawn": ctx.get("radiant_max_respawn"),
-                "dire_max_respawn": ctx.get("dire_max_respawn"),
-                "radiant_core_dead_count": ctx.get("radiant_core_dead_count"),
-                "dire_core_dead_count": ctx.get("dire_core_dead_count"),
-                "radiant_top3_nw": ctx.get("radiant_top3_nw"),
-                "dire_top3_nw": ctx.get("dire_top3_nw"),
-                "aegis_team": ctx.get("aegis_team"),
-                "aegis_holder_hero_id": ctx.get("aegis_holder_hero_id"),
-                "liveleague_age_ms": game.get("liveleague_age_ms"),
-                "game_time_lag_sec": game.get("game_time_lag_sec"),
-                "liveleague_context_status": game.get("liveleague_context_status"),
-            }
+            log_row = dict(ctx)
+            log_row["liveleague_age_ms"] = game.get("liveleague_age_ms")
+            log_row["game_time_lag_sec"] = game.get("game_time_lag_sec")
+            log_row["liveleague_context_status"] = game.get("liveleague_context_status")
             feature_logger.log_features(log_row)
 
         return game

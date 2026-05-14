@@ -29,6 +29,9 @@ class FairModelBundle:
         classes = list(getattr(model, "classes_", [0, 1]))
         radiant_idx = classes.index(1) if 1 in classes else len(proba) - 1
         radiant = float(proba[radiant_idx])
+        if radiant < -1e-9 or radiant > 1.0 + 1e-9:
+            return _missing_prediction(phase, "invalid_probability")
+        radiant = min(max(radiant, 0.0), 1.0)
         return {
             "radiant_fair_probability": round(radiant, 4),
             "dire_fair_probability": round(1.0 - radiant, 4),

@@ -1,15 +1,10 @@
-"""GetRealtimeStats parser and enrichment cache — SHADOW-ONLY SCAFFOLD.
+"""GetRealtimeStats delayed rich-context parser.
 
-This module is intentionally NOT integrated into the live signal path (main.py).
-It exists for shadow-log validation of per-player net worth data from
-GetRealtimeStats before any trading use. Do NOT call maybe_enrich_realtime()
-before confirming the parser handles real payloads correctly.
-
-The REALTIME_STATS_ENABLED flag defaults to false. Enable it only after
-shadow-logging real payloads and confirming player net worth extraction works.
-When enabled, it attaches fields to the game dict (realtime_radiant_nw, etc.)
-but these must NOT change expected_move, edge, sizing, or live entry decisions
-until freshness is proven and the data is validated.
+GetTopLiveGame is the fast execution source for duration, score, building
+state, and aggregate radiant net-worth lead. GetRealtimeStats is delayed, but
+it contains richer player/detail fields. This module attaches those delayed
+details without overwriting fast fields used for event detection and current
+win-probability anchoring.
 """
 
 import time
@@ -28,6 +23,55 @@ logger = logging.getLogger(__name__)
 REALTIME_STATS_URL = "https://api.steampowered.com/IDOTA2MatchStats_570/GetRealtimeStats/v1/"
 
 _cache: dict[str, tuple[dict | None, float]] = {}
+
+
+def _first_present(*values):
+    for value in values:
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _to_int(value) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _team_side(team: dict, fallback_idx: int | None = None) -> str | None:
+    """Resolve a GetRealtimeStats team object to radiant/dire.
+
+    Prefer explicit API fields when present. Fall back to Valve's common team
+    numbers, then array order for older/minimal payloads.
+    """
+    if not isinstance(team, dict):
+        return None
+    for key in ("side", "team_side", "faction"):
+        value = team.get(key)
+        if isinstance(value, str):
+            lowered = value.lower()
+            if "radiant" in lowered:
+                return "radiant"
+            if "dire" in lowered:
+                return "dire"
+    for key in ("is_radiant", "radiant"):
+        value = team.get(key)
+        if isinstance(value, bool):
+            return "radiant" if value else "dire"
+    for key in ("team_number", "team_slot", "side_id"):
+        value = _to_int(team.get(key))
+        if value in (0, 2):
+            return "radiant"
+        if value in (1, 3):
+            return "dire"
+    if fallback_idx == 0:
+        return "radiant"
+    if fallback_idx == 1:
+        return "dire"
+    return None
 
 
 async def _fetch_realtime_stats(session: Any, server_steam_id: str) -> tuple[dict | None, float]:
@@ -65,18 +109,35 @@ def parse_player_net_worth(data: dict | None) -> dict[str, Any] | None:
     radiant_cores_dead = 0
     dire_cores_dead = 0
     max_respawn = 0
+    radiant_level = 0
+    dire_level = 0
 
-    # Teams: 0=Radiant, 1=Dire
-    for side_idx, side_name in [(0, "radiant"), (1, "dire")]:
-        players = teams[side_idx].get("players") or []
+    side_teams: dict[str, dict] = {}
+    for idx, team in enumerate(teams):
+        side = _team_side(team, idx)
+        if side in ("radiant", "dire") and side not in side_teams:
+            side_teams[side] = team
+    if "radiant" not in side_teams or "dire" not in side_teams:
+        return None
+
+    for side_name in ("radiant", "dire"):
+        players = side_teams[side_name].get("players") or []
         for p_idx, player in enumerate(players):
-            nw = player.get("net_worth") or 0
+            nw = _to_int(player.get("net_worth")) or 0
+            level = _to_int(player.get("level")) or 0
             out[f"{side_name}_p{p_idx+1}_net_worth"] = nw
-            if side_name == "radiant": radiant_nw += nw
-            else: dire_nw += nw
+            out[f"{side_name}_p{p_idx+1}_hero_id"] = _to_int(player.get("hero_id"))
+            out[f"{side_name}_p{p_idx+1}_level"] = level
+            if side_name == "radiant":
+                radiant_nw += nw
+                radiant_level += level
+            else:
+                dire_nw += nw
+                dire_level += level
             
             # Death status
-            respawn_timer = player.get("respawn_timer") or 0
+            respawn_timer = _to_int(_first_present(player.get("respawn_timer"), player.get("respawn_time"))) or 0
+            out[f"{side_name}_p{p_idx+1}_respawn_timer"] = respawn_timer
             if respawn_timer > 0:
                 if side_name == "radiant": radiant_dead += 1
                 else: dire_dead += 1
@@ -89,12 +150,23 @@ def parse_player_net_worth(data: dict | None) -> dict[str, Any] | None:
                 if respawn_timer > max_respawn:
                     max_respawn = respawn_timer
 
+    delayed_game_time = _to_int(_first_present(
+        result.get("game_time"),
+        result.get("duration"),
+        (result.get("scoreboard") or {}).get("duration") if isinstance(result.get("scoreboard"), dict) else None,
+    ))
+
     out.update({
+        "realtime_game_time_sec": delayed_game_time,
+        "delayed_game_time_sec": delayed_game_time,
         "realtime_radiant_nw": radiant_nw,
         "realtime_dire_nw": dire_nw,
         "realtime_lead_nw": radiant_nw - dire_nw,
-        "radiant_net_worth": radiant_nw,
-        "dire_net_worth": dire_nw,
+        "delayed_radiant_net_worth": radiant_nw,
+        "delayed_dire_net_worth": dire_nw,
+        "delayed_net_worth_diff": radiant_nw - dire_nw,
+        "radiant_level": radiant_level,
+        "dire_level": dire_level,
         "radiant_dead_count": radiant_dead,
         "dire_dead_count": dire_dead,
         "radiant_core_dead_count": radiant_cores_dead,
@@ -120,6 +192,7 @@ async def maybe_enrich_realtime(game: dict, session: Any = None) -> dict:
             if parsed:
                 game.update(parsed)
                 game["realtime_stats_age_sec"] = round(now - cached_time, 2)
+                game["delayed_field_age_sec"] = game["realtime_stats_age_sec"]
             return game
 
     if session is None:
@@ -132,7 +205,8 @@ async def maybe_enrich_realtime(game: dict, session: Any = None) -> dict:
         parsed = parse_player_net_worth(data)
         if parsed:
             game.update(parsed)
-            game["realtime_stats_age_sec"] = round(now - (fetch_time or now), 2)
+            game["realtime_stats_age_sec"] = 0.0
+            game["delayed_field_age_sec"] = game["realtime_stats_age_sec"]
 
     return game
 

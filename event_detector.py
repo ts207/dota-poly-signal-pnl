@@ -258,6 +258,7 @@ class EventDetector:
             "dire_score": _to_int(game.get("dire_score")),
             "tower_state": _to_int(game.get("tower_state")),
             "building_state": _to_int(game.get("building_state")),
+            "data_source": game.get("data_source"),
         }
 
     def _base_event(self, snap: dict, mapping: dict | None, **kwargs) -> DotaEvent:
@@ -550,13 +551,19 @@ class EventDetector:
     # ------------------------------------------------------------------ #
 
     def _tower_events(self, prev: dict, cur: dict, mapping: dict | None) -> list[DotaEvent]:
-        prev_bs = prev.get("building_state")
-        cur_bs = cur.get("building_state")
+        if cur.get("data_source") == "top_live" and cur.get("tower_state") is None:
+            return []
+        prev_bs = prev.get("tower_state")
+        cur_bs = cur.get("tower_state")
+        if prev_bs is None:
+            prev_bs = prev.get("building_state")
+        if cur_bs is None:
+            cur_bs = cur.get("building_state")
         
         if prev_bs is None or cur_bs is None or prev_bs == cur_bs:
             return []
 
-        # GetTopLiveGame building_state decoding:
+        # Standard tower_state decoding:
         # It is a 22-bit integer where 1=ALIVE, 0=DESTROYED.
         # Bits 0-10: Radiant buildings
         # Bits 11-21: Dire buildings

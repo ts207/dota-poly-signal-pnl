@@ -1,4 +1,5 @@
 import time
+import csv
 
 import pytest
 
@@ -126,3 +127,80 @@ def test_dynamic_model_fair_can_trigger_value_exit():
 
     assert len(closed) == 1
     assert closed[0].exit_reason == "model_value_exit"
+
+
+def test_latency_edge_timeout_exits_after_average_edge_window(monkeypatch):
+    monkeypatch.setattr("paper_trader.EXIT_LATENCY_EDGE_SEC", 1)
+    trader = PaperTrader()
+    pos, reason = trader.enter(
+        signal=_signal(ask=0.50, fair_price=0.70, expected_move=0.20),
+        token_id="YES", side="YES",
+        book_store=Store({"YES": {"best_ask": 0.50, "best_bid": 0.48, "ask_size": 100}}),
+        match_id="M1", market_name="Test", opposing_token_id="NO",
+    )
+    assert pos is not None, reason
+    pos.entry_time_ns = time.time_ns() - 2_000_000_000
+
+    closed = trader.check_exits(Store({"YES": {"best_bid": 0.52, "best_ask": 0.54}}), set())
+
+    assert len(closed) == 1
+    assert closed[0].exit_reason == "latency_edge_timeout"
+
+
+def test_load_open_positions_replays_trade_csv(tmp_path):
+    path = tmp_path / "paper_trades.csv"
+    headers = [
+        "timestamp_utc", "action", "token_id", "match_id", "market_name", "side",
+        "entry_price", "shares", "cost_usd", "event_type", "lag", "expected_move",
+        "entry_game_time_sec", "exit_price", "proceeds_usd", "pnl_usd", "roi",
+        "hold_sec", "exit_game_time_sec", "exit_reason",
+    ]
+    rows = [
+        {
+            "timestamp_utc": "2026-05-14T18:52:51.576+00:00",
+            "action": "entry",
+            "token_id": "OPEN",
+            "match_id": "M1",
+            "market_name": "Test",
+            "side": "NO",
+            "entry_price": "0.39",
+            "shares": "142.05128205128204",
+            "cost_usd": "55.4",
+            "event_type": "COMEBACK_RECOVERY_60S",
+            "lag": "0.1258",
+            "expected_move": "0.1308",
+            "entry_game_time_sec": "1447",
+        },
+        {
+            "timestamp_utc": "2026-05-14T18:53:01.000+00:00",
+            "action": "entry",
+            "token_id": "CLOSED",
+            "match_id": "M2",
+            "market_name": "Other",
+            "side": "YES",
+            "entry_price": "0.50",
+            "shares": "20",
+            "cost_usd": "10",
+            "event_type": "LEAD_SWING_60S",
+            "lag": "0.1",
+            "expected_move": "0.2",
+            "entry_game_time_sec": "1200",
+        },
+        {"timestamp_utc": "2026-05-14T18:53:05.000+00:00", "action": "exit", "token_id": "CLOSED"},
+    ]
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    trader = PaperTrader()
+    restored = trader.load_open_positions(str(path))
+
+    assert restored == 1
+    assert set(trader.positions) == {"OPEN"}
+    pos = trader.positions["OPEN"]
+    assert pos.match_id == "M1"
+    assert pos.side == "NO"
+    assert pos.entry_price == pytest.approx(0.39)
+    assert pos.entry_game_time_sec == 1447
+    assert trader._match_open_usd["M1"] == pytest.approx(55.4)

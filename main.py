@@ -6,12 +6,14 @@ import aiohttp
 import time
 import os
 import json
+import fcntl
+from datetime import datetime, timezone
 
 from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
 from signal_engine import EventSignalEngine, apply_probability_move
 from paper_trader import PaperTrader
-from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger
+from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger, SignalMarkoutLogger
 from mapping import load_valid_mappings
 from event_detector import EventDetector
 from live_executor import LiveExecutor
@@ -35,6 +37,23 @@ from dota_fair_model.inference import load_bundle
 from dota_fair_model.features import build_feature_row
 
 MAPPING_REFRESH_SECONDS = 60
+_LOCK_HANDLE = None
+
+
+def _acquire_single_instance_lock(path: str = "logs/paper_bot.lock") -> bool:
+    """Prevent concurrent bot processes from writing the same runtime logs."""
+    global _LOCK_HANDLE
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    handle = open(path, "w", encoding="utf-8")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return False
+    handle.write(str(os.getpid()))
+    handle.flush()
+    _LOCK_HANDLE = handle
+    return True
 
 
 def age_ms(ns: int | None) -> int:
@@ -95,6 +114,57 @@ def _yes_fair_from_radiant(mapping: dict, game: dict, p_rad: float) -> tuple[flo
     return None
 
 
+def _hybrid_context(game: dict, liveleague_context: dict | None = None) -> dict:
+    """Delayed rich context for nowcast adjustments.
+
+    GetRealtimeStats is the delayed context source. LiveLeague is kept for
+    diagnostics/mapping only and must not fill trading context.
+    """
+    ctx: dict = {}
+    for key in (
+        "aegis_team", "radiant_dead_count", "dire_dead_count",
+        "radiant_core_dead_count", "dire_core_dead_count",
+        "radiant_max_respawn", "dire_max_respawn", "max_respawn_timer",
+        "radiant_level", "dire_level", "realtime_game_time_sec",
+        "delayed_game_time_sec", "delayed_field_age_sec",
+        "realtime_stats_age_sec",
+    ):
+        if game.get(key) is not None:
+            ctx[key] = game.get(key)
+    return ctx
+
+
+def _hybrid_delay_seconds(game: dict) -> float | None:
+    top_gt = game.get("game_time_sec")
+    delayed_gt = game.get("realtime_game_time_sec") or game.get("delayed_game_time_sec")
+    if top_gt is not None and delayed_gt is not None:
+        try:
+            return max(0.0, float(top_gt) - float(delayed_gt))
+        except (TypeError, ValueError):
+            return None
+    return game.get("game_time_lag_sec")
+
+
+def _exit_adverse_position_for_signal(signal: dict, mapping: dict, trader: PaperTrader, book_store: BookStore):
+    """Exit an open opposite-side paper position for a valid opposing event."""
+    if not signal.get("event_is_primary"):
+        return None
+    favored_token_id = signal.get("token_id")
+    if not favored_token_id:
+        return None
+    yes_token = mapping.get("yes_token_id")
+    no_token = mapping.get("no_token_id")
+    if favored_token_id == yes_token:
+        opposing_token = no_token
+    elif favored_token_id == no_token:
+        opposing_token = yes_token
+    else:
+        return None
+    if opposing_token not in trader.positions:
+        return None
+    return trader.force_exit(opposing_token, book_store, "adverse_event")
+
+
 async def _log_live_attempt_with_markouts(attempt, book_store: BookStore, live_logger: LiveAttemptLogger):
     """Log submit row immediately, then a final row after 30s with markouts."""
     live_logger.log_attempt(attempt, phase="submit")
@@ -119,6 +189,38 @@ async def _log_live_attempt_with_markouts(attempt, book_store: BookStore, live_l
     live_logger.log_attempt(attempt, phase="markout", markouts=markouts)
 
 
+async def _log_signal_markouts(row: dict, token_id: str, book_store: BookStore, markout_logger: SignalMarkoutLogger):
+    """Log post-signal mid-price movement for skipped/filled signal analysis."""
+    reference = row.get("reference_price")
+    try:
+        reference = float(reference) if reference is not None else None
+    except (TypeError, ValueError):
+        reference = None
+
+    fair = row.get("fair_price") if row.get("fair_price") is not None else row.get("hybrid_fair")
+    try:
+        fair = float(fair) if fair is not None else None
+    except (TypeError, ValueError):
+        fair = None
+
+    markouts = {}
+    edges = {}
+
+    async def sample(delay: int, label: str):
+        await asyncio.sleep(delay)
+        mid = _book_mid(book_store.get(token_id))
+        markouts[f"markout_{label}"] = round(mid - reference, 4) if mid is not None and reference is not None else None
+        edges[f"edge_after_{label}"] = round(fair - mid, 4) if mid is not None and fair is not None else None
+
+    await sample(3, "3s")
+    await sample(7, "10s")
+    await sample(20, "30s")
+    out = dict(row)
+    out.update(markouts)
+    out.update(edges)
+    markout_logger.log_markout(out)
+
+
 async def steam_loop(
     book_store: BookStore,
     trader: PaperTrader,
@@ -136,6 +238,7 @@ async def steam_loop(
     source_delay_logger: SourceDelayLogger,
     rescue_logger: BookRefreshRescueLogger,
     match_winner_logger: MatchWinnerSignalLogger,
+    signal_markout_logger: SignalMarkoutLogger,
     llg_cache: LiveLeagueContextCache,
     mappings: list[dict],
     asset_ids: list[str],
@@ -240,9 +343,9 @@ async def steam_loop(
                     # never changes expected_move/edge/sizing)
                     llg_cache.attach_to_game(game, feature_logger=llg_feature_logger)
 
-                    # Enrich with Realtime Stats as the base (120s delayed)
-                    # This provides the high-fidelity features (per-player NW, dead counts)
-                    # that GetTopLiveGame (0s delayed) lacks.
+                    # GetRealtimeStats is delayed rich context: heroes/player
+                    # net worth/deaths/levels. It must not overwrite fast
+                    # GetTopLiveGame duration, score, or radiant_lead.
                     await maybe_enrich_realtime(game, session)
 
                     # Validate mapping identity against LLG context immediately
@@ -400,14 +503,17 @@ async def steam_loop(
                                     except Exception as e:
                                         print(f"ML prediction error: {e}")
 
-                                lag = game.get("game_time_lag_sec")
+                                hybrid_context = _hybrid_context(game, ctx)
+                                lag = _hybrid_delay_seconds(game)
                                 nowcast = compute_hybrid_nowcast(
-                                    latest_liveleague_features=ctx,
+                                    latest_liveleague_features=hybrid_context,
                                     latest_toplive_snapshot=game,
                                     toplive_event_cluster=cluster_events,
                                     source_delay_metrics={"game_time_lag_sec": lag},
                                     slow_model_fair=slow_model_fair,
                                     event_only_fair=signal.get("fair_price"),
+                                    game_time_sec=game.get("game_time_sec"),
+                                    event_direction=event_direction,
                                 )
                                 nowcast_data = nowcast.to_dict()
                                 signal.update(nowcast_data)
@@ -509,7 +615,10 @@ async def steam_loop(
                                             ask_size=_fresh_book.get("ask_size"),
                                             raw=_fresh_book.get("raw"),
                                         )
-                                        _rescue_row["refresh_request_start_ns"] = _fresh_book.get("refresh_latency_ns")
+                                        if _fresh_book.get("best_bid") is not None and _fresh_book.get("best_ask") is not None:
+                                            _fresh_mid = (float(_fresh_book["best_bid"]) + float(_fresh_book["best_ask"])) / 2.0
+                                            signal_engine.record_price(_rescue_tok_id, _fresh_mid, game.get("game_time_sec"))
+                                        _rescue_row["refresh_request_start_ns"] = _fresh_book.get("request_start_ns")
                                         _rescue_row["refresh_response_ns"] = _fresh_book.get("received_at_ns")
                                         _rescue_row["refresh_latency_ms"] = round(_fresh_book.get("refresh_latency_ns", 0) / 1_000_000, 1)
                                         _rescue_row["fresh_bid"] = _fresh_book.get("best_bid")
@@ -664,6 +773,43 @@ async def steam_loop(
                                     token_id=tok_id,
                                     side=tok_side,
                                 )
+                                if tok_id and (
+                                    signal.get("event_is_primary") is True
+                                    or str(signal.get("event_is_primary")).lower() == "true"
+                                    or signal.get("event_tier") in {"A", "B"}
+                                ):
+                                    ref_bid = selected_book.get("best_bid") if selected_book else signal.get("bid")
+                                    ref_ask = selected_book.get("best_ask") if selected_book else signal.get("ask")
+                                    reference_price = ref_ask or signal.get("executable_price")
+                                    if reference_price is None:
+                                        reference_price = _book_mid(selected_book)
+                                    asyncio.create_task(_log_signal_markouts({
+                                        "signal_timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                                        "match_id": str(game.get("match_id") or ""),
+                                        "market_name": mapping.get("name"),
+                                        "event_type": signal.get("event_type"),
+                                        "event_tier": signal.get("event_tier"),
+                                        "event_is_primary": signal.get("event_is_primary"),
+                                        "event_direction": event_direction,
+                                        "token_id": tok_id,
+                                        "side": tok_side,
+                                        "decision": signal.get("decision"),
+                                        "skip_reason": signal.get("reason"),
+                                        "reference_price": reference_price,
+                                        "reference_bid": ref_bid,
+                                        "reference_ask": ref_ask,
+                                        "fair_price": signal.get("fair_price"),
+                                        "hybrid_fair": signal.get("hybrid_fair"),
+                                        "executable_edge": signal.get("executable_edge"),
+                                    }, tok_id, book_store, signal_markout_logger))
+
+                                cp = _exit_adverse_position_for_signal(signal, mapping, trader, book_store)
+                                if cp:
+                                    position_logger.log_exit(cp)
+                                    print(
+                                        f"ADVERSE EXIT {mapping['name']} {cp.side} "
+                                        f"pnl=${cp.pnl_usd:+.2f} hold={cp.hold_sec:.0f}s"
+                                    )
 
                                 if mapping.get("market_type") == "MATCH_WINNER":
                                     # Task 4: Match Winner research mode sidecar
@@ -777,22 +923,10 @@ async def steam_loop(
                                     f"edge={signal.get('executable_edge')}"
                                 )
 
-                                # Determine the opposing token for this binary market
                                 opposing_tok = (
                                     mapping["no_token_id"] if tok_id == mapping["yes_token_id"]
                                     else mapping["yes_token_id"]
                                 )
-
-                                # Adverse event exit: if the opposing token is open, close it
-                                # before entering the new direction (the event contradicts it)
-                                if opposing_tok in trader.positions:
-                                    cp = trader.force_exit(opposing_tok, book_store, "adverse_event")
-                                    if cp:
-                                        position_logger.log_exit(cp)
-                                        print(
-                                            f"ADVERSE EXIT {mapping['name']} {cp.side} "
-                                            f"pnl=${cp.pnl_usd:+.2f} hold={cp.hold_sec:.0f}s"
-                                        )
 
                                 if live_executor and live_logger:
                                     attempt = await live_executor.try_buy(
@@ -871,8 +1005,10 @@ async def steam_loop(
                                     else:
                                         print(f"SKIP ENTRY: {reason}")
 
-                # 2. Tick-level ML valuation arbitrage (always-on)
-                if ML_STRATEGY_ENABLED and model_bundle:
+                # 2. Tick-level model fair maintenance, with optional ML-only entries.
+                # This runs even when ML_STRATEGY_ENABLED=false so event/hybrid
+                # positions can exit against updated model value.
+                if model_bundle:
                     for game in active_games:
                         # Skip if we already just processed events for this match in this poll
                         # (The hybrid nowcast already incorporated the ML fair for those)
@@ -914,6 +1050,9 @@ async def steam_loop(
                                 yes_fair, yes_direction = yes_fair_direction
                                 trader.update_fair_value(yes_tok, yes_fair)
                                 trader.update_fair_value(no_tok, 1.0 - yes_fair)
+
+                                if not ML_STRATEGY_ENABLED:
+                                    continue
 
                                 # Only enter if we don't already have an open position in this market.
                                 # Existing positions use the refreshed fair value in check_exits().
@@ -981,6 +1120,14 @@ async def steam_loop(
 
 
 async def main():
+    if not _acquire_single_instance_lock():
+        print("Another paper bot instance is already running; refusing to start.")
+        return
+    print(
+        f"Runtime config: LIVE_TRADING={LIVE_TRADING} MODE={os.getenv('MODE', 'paper')} "
+        f"ML_STRATEGY_ENABLED={ML_STRATEGY_ENABLED}"
+    )
+
     # Initial sync: try to link any already-live Steam games before starting
     print("Running initial Steam market sync...")
     try:
@@ -1022,6 +1169,10 @@ async def main():
     live_executor = LiveExecutor() if LIVE_TRADING else None
     rescue_logger = BookRefreshRescueLogger()
     match_winner_logger = MatchWinnerSignalLogger(log_dir="logs")
+    signal_markout_logger = SignalMarkoutLogger()
+    restored_positions = trader.load_open_positions(position_logger.filename)
+    if restored_positions:
+        print(f"Restored {restored_positions} open paper position(s) from {position_logger.filename}")
 
     model_bundle = None
     if os.path.exists(DOTA_FAIR_MODEL_PATH):
@@ -1057,7 +1208,7 @@ async def main():
         async with aiohttp.ClientSession() as session:
             await asyncio.gather(
                 listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
-                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, rescue_logger, match_winner_logger, llg_cache, mappings, asset_ids, model_bundle=model_bundle, http_session=session),
+                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, rescue_logger, match_winner_logger, signal_markout_logger, llg_cache, mappings, asset_ids, model_bundle=model_bundle, http_session=session),
             )
     except asyncio.CancelledError:
         pass

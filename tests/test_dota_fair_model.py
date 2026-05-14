@@ -12,6 +12,13 @@ class FakeModel:
         return [[0.3, 0.7]]
 
 
+class BadProbabilityModel:
+    classes_ = [0, 1]
+
+    def predict_proba(self, X):
+        return [[-0.2, 1.2]]
+
+
 def test_phase_for_duration_has_unknown_and_finer_buckets():
     assert phase_for_duration(None) == "unknown"
     assert phase_for_duration("") == "unknown"
@@ -54,6 +61,38 @@ def test_build_feature_row_computes_derived_diffs_and_missingness():
     assert features["feature_schema_version"] == FEATURE_SCHEMA_VERSION
 
 
+def test_build_feature_row_treats_nan_as_missing():
+    row = {
+        "match_id": "m1",
+        "game_time_sec": 1200,
+        "radiant_score": 12,
+        "dire_score": 9,
+        "score_diff": float("nan"),
+        "radiant_net_worth": 33000,
+        "dire_net_worth": 30000,
+        "net_worth_diff": float("nan"),
+    }
+    features = build_feature_row(row)
+    assert features["score_diff"] == 3
+    assert features["net_worth_diff"] == 3000
+    assert features["net_worth_diff_missing"] == 0.0
+
+
+def test_build_feature_row_uses_fast_radiant_lead_for_current_net_worth_diff():
+    row = {
+        "match_id": "m1",
+        "game_time_sec": 1200,
+        "radiant_score": 12,
+        "dire_score": 9,
+        "radiant_lead": 5000,
+        "delayed_radiant_net_worth": 33000,
+        "delayed_dire_net_worth": 30000,
+    }
+    features = build_feature_row(row)
+    assert features["net_worth_diff"] == 5000
+    assert features["net_worth_diff_missing"] == 0.0
+
+
 def test_row_to_features_includes_missingness_columns():
     vector = row_to_features({"game_time_sec": 1200, "radiant_has_aegis": False})
     assert len(vector) == len(DEFAULT_FEATURE_COLUMNS)
@@ -67,6 +106,13 @@ def test_predict_radiant_returns_no_prediction_for_unknown_phase():
     assert pred["radiant_fair_probability"] is None
     assert pred["model_phase"] == "unknown"
     assert pred["model_reason"] == "unknown_phase"
+
+
+def test_predict_radiant_rejects_out_of_range_probability():
+    bundle = FairModelBundle(models={"mid": BadProbabilityModel()}, metadata={"feature_names": DEFAULT_FEATURE_COLUMNS})
+    pred = bundle.predict_radiant({"match_id": "m1", "game_time_sec": 25 * 60})
+    assert pred["radiant_fair_probability"] is None
+    assert pred["model_reason"] == "invalid_probability"
 
 
 def test_predict_yes_maps_radiant_to_market_side():

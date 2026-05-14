@@ -18,6 +18,13 @@ def game(t, lead, r_score=0, d_score=0, building_state=ALL_ALIVE):
     }
 
 
+def top_live_game(t, lead, r_score=0, d_score=0, building_state=ALL_ALIVE):
+    g = game(t, lead, r_score, d_score, building_state)
+    g["data_source"] = "top_live"
+    g["tower_state"] = None
+    return g
+
+
 def mapping():
     return {"name": "Team A Game 1", "yes_team": "Team A", "yes_token_id": "YES"}
 
@@ -166,6 +173,31 @@ def test_dire_tower_fall_favors_radiant():
     detector.observe(game(0, 0, building_state=ALL_ALIVE), mapping())
     events = detector.observe(game(20, 500, building_state=ALL_ALIVE & ~(1 << 15)), mapping())
     assert any(e.event_type == "T2_TOWER_FALL" and e.direction == "radiant" for e in events)
+
+
+def test_top_live_building_state_does_not_emit_structure_events_without_decoded_tower_state():
+    detector = EventDetector()
+    detector.observe(top_live_game(723, -1100, r_score=3, d_score=3, building_state=4849801), mapping())
+    events = detector.observe(top_live_game(783, 934, r_score=4, d_score=3, building_state=5374089), mapping())
+    assert not any(e.event_type in {"MULTIPLE_T3_TOWERS_DOWN", "ALL_T3_TOWERS_DOWN", "OBJECTIVE_CONVERSION_T3"} for e in events)
+
+
+def test_top_live_decoded_tower_state_emits_t2_without_false_t3():
+    detector = EventDetector()
+    initial = 0x490049
+    top_t1_down = (initial & ~(1 << 16)) | (1 << 17)
+    top_t2_down = (top_t1_down & ~(1 << 17)) | (1 << 18)
+
+    prev = top_live_game(700, 1000, r_score=5, d_score=4, building_state=top_t1_down)
+    prev["tower_state"] = (1 << 22) - 1 & ~(1 << 11)
+    cur = top_live_game(760, 1800, r_score=6, d_score=4, building_state=top_t2_down)
+    cur["tower_state"] = prev["tower_state"] & ~(1 << 12)
+
+    detector.observe(prev, mapping())
+    events = detector.observe(cur, mapping())
+
+    assert any(e.event_type == "T2_TOWER_FALL" and e.direction == "radiant" for e in events)
+    assert not any(e.event_type in {"T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN", "ALL_T3_TOWERS_DOWN"} for e in events)
 
 
 def test_building_state_does_not_treat_existing_destroyed_t3s_as_new_falls():

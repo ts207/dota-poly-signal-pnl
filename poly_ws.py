@@ -31,6 +31,10 @@ class BookStore:
 
     def __init__(self):
         self.books = {}
+        self.last_any_msg_ns = None
+
+    def record_msg(self):
+        self.last_any_msg_ns = time.time_ns()
 
     def _ensure(self, asset_id: str) -> dict:
         return self.books.setdefault(asset_id, {
@@ -221,6 +225,7 @@ async def listen_books(
                         continue
 
                     data = json.loads(msg)
+                    store.record_msg()
                     events = data if isinstance(data, list) else [data]
                     changed = False
                     for event in events:

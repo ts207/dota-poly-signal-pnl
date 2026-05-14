@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .schemas import FEATURE_SCHEMA_VERSION, phase_for_duration
@@ -64,6 +65,7 @@ def row_to_features(row: dict[str, Any], feature_columns: list[str] | None = Non
 def build_feature_row(row: dict[str, Any]) -> dict[str, Any]:
     derived = dict(row)
     _derive_diff(derived, "score_diff", "radiant_score", "dire_score")
+    _derive_fast_net_worth_diff(derived)
     _derive_diff(derived, "net_worth_diff", "radiant_net_worth", "dire_net_worth")
     _derive_top_n_diff(derived, "top1_net_worth_diff", 1)
     _derive_top_n_diff(derived, "top2_net_worth_diff", 2)
@@ -91,6 +93,14 @@ def _derive_diff(row: dict[str, Any], out_key: str, left_key: str, right_key: st
         row[out_key] = left - right
 
 
+def _derive_fast_net_worth_diff(row: dict[str, Any]) -> None:
+    if not _is_missing(row.get("net_worth_diff")):
+        return
+    radiant_lead = _to_optional_float(row.get("radiant_lead"))
+    if radiant_lead is not None:
+        row["net_worth_diff"] = radiant_lead
+
+
 def _derive_top_n_diff(row: dict[str, Any], out_key: str, n: int) -> None:
     if not _is_missing(row.get(out_key)):
         return
@@ -111,7 +121,12 @@ def _top_values_from_row(row: dict[str, Any], side: str, n: int) -> list[float]:
 
 
 def _is_missing(value: Any) -> bool:
-    return value in (None, "")
+    if value in (None, ""):
+        return True
+    try:
+        return math.isnan(float(value))
+    except (TypeError, ValueError):
+        return False
 
 
 def _to_optional_float(value: Any) -> float | None:

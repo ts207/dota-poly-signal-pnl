@@ -10,6 +10,7 @@ from config import STEAM_API_KEY, LLG_REFRESH_SECONDS
 TOP_LIVE_URL = "https://api.steampowered.com/IDOTA2Match_570/GetTopLiveGame/v1/"
 LIVE_LEAGUE_URL = "https://api.steampowered.com/IDOTA2Match_570/GetLiveLeagueGames/v1/"
 REALTIME_STATS_URL = "https://api.steampowered.com/IDOTA2MatchStats_570/GetRealtimeStats/v1/"
+SIDE_TOWER_ALIVE_MASK = 0x7FF
 
 
 async def _get_json(session: aiohttp.ClientSession, url: str, params: dict, timeout: float = 5) -> dict:
@@ -38,6 +39,44 @@ def _source_update_age_sec(last_update_time, received_at_ns: int) -> float | Non
     return max(0.0, received_s - ts)
 
 
+def decode_top_live_tower_state(building_state) -> int | None:
+    """Convert GetTopLiveGame building_state into the standard tower alive mask.
+
+    TopLive does not expose the normal per-side tower_state alive bitmask. For
+    lane towers it appears to expose per-lane progress bits:
+      side A: 0..2 top, 3..5 mid, 6..8 bot
+      side B: 16..18 top, 19..21 mid, 22..24 bot
+
+    The highest set bit in each 3-bit lane group is the deepest exposed tier:
+      0 => T1 alive, 1 => T1 down/T2 alive, 2 => T1+T2 down/T3 alive.
+
+    Bits beyond lane towers are not treated as T4s here. Those bits can turn on
+    around base/rax states and caused false early T3/T4 signals when interpreted
+    as the standard mask. We keep T4 bits alive until separately validated.
+    """
+    try:
+        raw = int(building_state)
+    except (TypeError, ValueError):
+        return None
+
+    low_side = _decode_top_live_side_towers(raw & 0x1FF)
+    high_side = _decode_top_live_side_towers((raw >> 16) & 0x1FF)
+    return low_side | (high_side << 11)
+
+
+def _decode_top_live_side_towers(progress_bits: int) -> int:
+    alive = (1 << 9) | (1 << 10)  # T4 state not decoded from TopLive.
+    for lane_base in (0, 3, 6):
+        group = (progress_bits >> lane_base) & 0b111
+        if group == 0:
+            destroyed_count = 3
+        else:
+            destroyed_count = max(i for i in range(3) if group & (1 << i))
+        for tier in range(destroyed_count, 3):
+            alive |= 1 << (lane_base + tier)
+    return alive & SIDE_TOWER_ALIVE_MASK
+
+
 def normalize_top_live(g: dict, received_at_ns: int) -> dict:
     """Normalize a GetTopLiveGame entry into the standard game dict.
 
@@ -63,7 +102,7 @@ def normalize_top_live(g: dict, received_at_ns: int) -> dict:
         "radiant_net_worth": None,
         "dire_net_worth": None,
         "building_state": g.get("building_state"),
-        "tower_state": g.get("building_state"),
+        "tower_state": decode_top_live_tower_state(g.get("building_state")),
         "radiant_barracks_state": None,
         "dire_barracks_state": None,
         "server_steam_id": str(g.get("server_steam_id") or ""),

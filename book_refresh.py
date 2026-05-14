@@ -41,21 +41,29 @@ async def fetch_fresh_book(
     bid_size = None
     ask_size = None
 
-    if asks:
+    parsed_asks: list[tuple[float, float]] = []
+    for level in asks:
         try:
-            best_ask = float(asks[0]["price"])
-            ask_size = float(asks[0].get("size", 0))
-        except (ValueError, KeyError, IndexError, TypeError):
-            best_ask = None
-            ask_size = None
+            price = float(level["price"])
+            size = float(level.get("size", 0))
+        except (ValueError, KeyError, TypeError):
+            continue
+        if size > 0:
+            parsed_asks.append((price, size))
+    if parsed_asks:
+        best_ask, ask_size = min(parsed_asks, key=lambda item: item[0])
 
-    if bids:
+    parsed_bids: list[tuple[float, float]] = []
+    for level in bids:
         try:
-            best_bid = float(bids[0]["price"])
-            bid_size = float(bids[0].get("size", 0))
-        except (ValueError, KeyError, IndexError, TypeError):
-            best_bid = None
-            bid_size = None
+            price = float(level["price"])
+            size = float(level.get("size", 0))
+        except (ValueError, KeyError, TypeError):
+            continue
+        if size > 0:
+            parsed_bids.append((price, size))
+    if parsed_bids:
+        best_bid, bid_size = max(parsed_bids, key=lambda item: item[0])
 
     if best_ask is None and best_bid is None:
         return None
@@ -70,6 +78,7 @@ async def fetch_fresh_book(
         "ask_size": ask_size,
         "spread": spread,
         "mid": mid,
+        "request_start_ns": start_ns,
         "received_at_ns": response_ns,
         "refresh_latency_ns": response_ns - start_ns,
     }
