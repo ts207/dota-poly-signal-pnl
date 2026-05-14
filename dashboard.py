@@ -753,7 +753,7 @@ tr.stale-row .tag { opacity: .68; }
     <div class="tbl-wrap wide-scroll">
       <table>
         <thead><tr>
-          <th>Source</th><th>Radiant</th><th>Dire</th><th>Game Time</th>
+          <th>Source</th><th>Radiant</th><th>Dire</th><th>Phase</th><th>Game Time</th>
           <th>Score</th><th>NW Lead</th><th>R Towers</th><th>D Towers</th><th>Updated</th>
         </tr></thead>
         <tbody id="games-body"><tr class="empty-row"><td colspan="9">no live games</td></tr></tbody>
@@ -1046,6 +1046,7 @@ async function refresh() {
         <td>${src}</td>
         <td>${g.radiant_team}</td>
         <td>${g.dire_team}</td>
+        <td class="au">${g.phase || '—'}</td>
         <td class="dim">${fmtGT(g.game_time_sec)}</td>
         <td><span class="${parseInt(g.radiant_score)>=parseInt(g.dire_score)?'g':'r'}">${g.radiant_score}</span>-<span class="${parseInt(g.dire_score)>=parseInt(g.radiant_score)?'g':'r'}">${g.dire_score}</span></td>
         <td class="${nwCls}">${nwStr}</td>
@@ -1085,8 +1086,8 @@ async function refresh() {
         : `<span class="tag tag-skip">${(s.skip_reason||'skip').slice(0,16)}</span>`;
       const detail = buy
         ? `lag=${parseFloat(s.lag||0).toFixed(3)} · ask=${parseFloat(s.ask||0).toFixed(4)}` +
-          (s.market_move_recent != null ? ` · mv=${parseFloat(s.market_move_recent).toFixed(3)}` : '') +
-          (s.executable_edge != null ? ` · edge=${parseFloat(s.executable_edge).toFixed(3)}` : '')
+          (s.hybrid_fair != null ? ` · hybrid=${parseFloat(s.hybrid_fair).toFixed(3)}` : '') +
+          (s.hybrid_confidence != null ? ` · conf=${(parseFloat(s.hybrid_confidence)*100).toFixed(0)}%` : '')
         : `gt=${fmtGT(s.game_time_sec)}` +
           (s.steam_age_ms ? ` · steam=${s.steam_age_ms}ms` : '');
       return `<div class="fi">
