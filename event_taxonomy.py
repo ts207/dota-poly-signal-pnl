@@ -18,27 +18,30 @@ TIER_B_EVENTS = frozenset({
     "LATE_GAME_WIPE",
     "STOMP_THROW",
     "MAJOR_COMEBACK",
+    "MAJOR_COMEBACK_RECOVERY_60S",
+    "COMEBACK_RECOVERY_60S",
     "FIRST_T4_TOWER_FALL",
     "ALL_T3_TOWERS_DOWN",
     "MULTI_STRUCTURE_COLLAPSE",
     "MULTIPLE_T3_TOWERS_DOWN",
+    "KILL_CONFIRMED_LEAD_SWING",
+    "TEAMFIGHT_SWING_30S",
+    "KILL_BURST_30S",
+    "LEAD_SWING_30S",
+    "MULTIPLE_T2_TOWERS_DOWN",
+    "FIGHT_TO_GOLD_CONFIRM_30S",
 })
 
 TIER_C_EVENTS = frozenset({
-    "KILL_CONFIRMED_LEAD_SWING",
     "EXTREME_LEAD_SWING_30S",
     "LEAD_SWING_60S",
-    "LEAD_SWING_30S",
-    "KILL_BURST_30S",
     "T2_TOWER_FALL",
-    "MULTIPLE_T2_TOWERS_DOWN",
     "ALL_T2_TOWERS_DOWN",
     "COMEBACK",
 })
 
 RESEARCH_EVENTS = frozenset({
     "OBJECTIVE_CONVERSION_T2",
-    "FIGHT_TO_GOLD_CONFIRM_30S",
     "LOW_PRICE_UNDERDOG_COUNTERPUNCH",
     "LATE_CHEAP_LEAD_SWING_REPRICE",
     "KILL_CONFIRMED_LEAD_SWING_LATE_CHEAP",
@@ -47,6 +50,7 @@ RESEARCH_EVENTS = frozenset({
     "SUPPORT_KILL_FILTER",
     "AEGIS_PUSH_WINDOW",
     "ROSHAN_SWING",
+    "BLOODY_EVEN_FIGHT_30S",
 })
 
 BLOCKING_EVENTS = frozenset({
@@ -78,11 +82,15 @@ EVENT_FAMILY: dict[str, str] = {
     "LATE_ECONOMIC_CRASH": "late_reversal",
     "ULTRA_LATE_WIPE_CONFIRMED": "late_reversal",
     "STOMP_THROW_WITH_OBJECTIVE_RISK": "late_reversal",
+    "MAJOR_COMEBACK_RECOVERY_60S": "late_reversal",
+    "COMEBACK_RECOVERY_60S": "late_reversal",
     "ALL_T3_TOWERS_DOWN": "base_pressure",
     "FIRST_T4_TOWER_FALL": "base_pressure",
     "MULTI_STRUCTURE_COLLAPSE": "base_pressure",
     "MULTIPLE_T3_TOWERS_DOWN": "base_pressure",
     "KILL_CONFIRMED_LEAD_SWING": "fight_economy_confirmation",
+    "TEAMFIGHT_SWING_30S": "fight_economy_confirmation",
+    "BLOODY_EVEN_FIGHT_30S": "teamfight_context",
     "EXTREME_LEAD_SWING_30S": "fight_economy_confirmation",
     "LEAD_SWING_60S": "fight_economy_confirmation",
     "LEAD_SWING_30S": "fight_economy_confirmation",

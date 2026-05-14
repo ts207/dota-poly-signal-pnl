@@ -30,8 +30,8 @@ def test_detects_30s_lead_swing():
     assert any(e.event_type == "LEAD_SWING_30S" for e in events)
     evt = next(e for e in events if e.event_type == "LEAD_SWING_30S")
     assert evt.event_dedupe_key
-    assert evt.event_tier == "C"
-    assert evt.event_is_primary is False
+    assert evt.event_tier == "B"
+    assert evt.event_is_primary is True
 
 
 def test_suppresses_duplicate_same_event_key():
@@ -74,6 +74,29 @@ def test_detects_kill_confirmed_lead_swing():
     assert evt.severity == "medium"
 
 
+def test_detects_teamfight_swing_below_kill_confirmed_gold_threshold():
+    detector = EventDetector()
+    detector.observe(game(0, 0, r_score=5, d_score=5), mapping())
+    events = detector.observe(game(31, 1200, r_score=7, d_score=5), mapping())
+    event_types = {e.event_type for e in events}
+    assert "TEAMFIGHT_SWING_30S" in event_types
+    assert "KILL_CONFIRMED_LEAD_SWING" not in event_types
+    evt = next(e for e in events if e.event_type == "TEAMFIGHT_SWING_30S")
+    assert evt.direction == "radiant"
+    assert evt.event_tier == "B"
+    assert evt.event_is_primary is True
+
+
+def test_detects_bloody_even_fight_as_research_context():
+    detector = EventDetector()
+    detector.observe(game(0, 0, r_score=5, d_score=5), mapping())
+    events = detector.observe(game(31, 200, r_score=8, d_score=7), mapping())
+    evt = next(e for e in events if e.event_type == "BLOODY_EVEN_FIGHT_30S")
+    assert evt.direction is None
+    assert evt.event_tier == "research"
+    assert evt.event_is_primary is False
+
+
 def test_detects_kill_swing_only_when_networth_confirms():
     detector = EventDetector()
     detector.observe(game(0, 1000, r_score=5, d_score=5), mapping())
@@ -86,6 +109,8 @@ def test_detects_kill_swing_only_when_networth_confirms():
     evt = next(e for e in confirmed if e.event_type == "KILL_BURST_30S")
     assert evt.direction == "radiant"
     assert evt.severity == "high"
+    assert evt.event_tier == "B"
+    assert evt.event_is_primary is True
 
 
 def test_lead_swing_requires_reasonable_window_tolerance():
@@ -267,6 +292,28 @@ def test_detects_late_major_comeback_reprice():
     assert "LEAD_SWING_60S" in evt.component_event_types
 
 
+def test_detects_comeback_recovery_before_lead_flip():
+    detector = EventDetector()
+    detector.observe(game(1200, -5000, r_score=10, d_score=16), mapping())
+    events = detector.observe(game(1260, -2500, r_score=13, d_score=16), mapping())
+    evt = next(e for e in events if e.event_type == "COMEBACK_RECOVERY_60S")
+    assert evt.direction == "radiant"
+    assert evt.delta == 2500
+    assert evt.event_tier == "B"
+    assert evt.event_is_primary is True
+
+
+def test_detects_late_major_comeback_reprice_before_lead_flip():
+    detector = EventDetector()
+    detector.observe(game(2400, -9000, r_score=20, d_score=28), mapping())
+    events = detector.observe(game(2460, -4500, r_score=24, d_score=28), mapping())
+    event_types = {e.event_type for e in events}
+    assert "MAJOR_COMEBACK_RECOVERY_60S" in event_types
+    evt = next(e for e in events if e.event_type == "LATE_MAJOR_COMEBACK_REPRICE")
+    assert evt.direction == "radiant"
+    assert "MAJOR_COMEBACK_RECOVERY_60S" in evt.component_event_types
+
+
 def test_detects_ultra_late_wipe_confirmed_with_base_pressure():
     detector = EventDetector()
     detector.observe(game(3000, 0, r_score=30, d_score=30, building_state=ALL_ALIVE), mapping())
@@ -283,14 +330,14 @@ def test_detects_ultra_late_wipe_confirmed_with_base_pressure():
     assert evt.event_tier == "B"
 
 
-def test_detects_fight_to_gold_confirm_research_event():
+def test_detects_fight_to_gold_confirm_primary_event():
     detector = EventDetector()
     detector.observe(game(600, 0, r_score=8, d_score=8), mapping())
     events = detector.observe(game(631, 2600, r_score=11, d_score=8), mapping())
     evt = next(e for e in events if e.event_type == "FIGHT_TO_GOLD_CONFIRM_30S")
     assert evt.direction == "radiant"
-    assert evt.event_tier == "research"
-    assert evt.event_is_primary is False
+    assert evt.event_tier == "B"
+    assert evt.event_is_primary is True
     assert evt.component_deltas
 
 

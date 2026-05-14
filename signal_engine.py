@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from team_utils import norm_team
 from event_taxonomy import TIER_A_EVENTS, TIER_B_EVENTS, event_family, event_is_primary, event_tier
+from series_model import compute_bo3_match_p
 
 from config import (
     MAX_STEAM_AGE_MS, MAX_SOURCE_UPDATE_AGE_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS,
@@ -53,18 +54,21 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
     "MULTIPLE_T3_TOWERS_DOWN":   EventSpec(0.15, 0.30, 7.0),
     "T3_TOWER_FALL":             EventSpec(0.09, 0.22, 7.0),
     "MAJOR_COMEBACK":            EventSpec(0.15, 0.32, 18.0),
+    "MAJOR_COMEBACK_RECOVERY_60S": EventSpec(0.12, 0.28, 10.0),
+    "COMEBACK_RECOVERY_60S":     EventSpec(0.075, 0.18, 10.0),
     "EXTREME_LEAD_SWING_30S":   EventSpec(0.12, 0.28, 10.0),
-    "KILL_CONFIRMED_LEAD_SWING": EventSpec(0.09, 0.22, 12.0),
+    "KILL_CONFIRMED_LEAD_SWING": EventSpec(0.10, 0.24, 8.0),
+    "TEAMFIGHT_SWING_30S":       EventSpec(0.085, 0.18, 6.0),
     "LEAD_SWING_60S":            EventSpec(0.05, 0.12, 15.0),
-    "LEAD_SWING_30S":            EventSpec(0.06, 0.15, 15.0),
-    "KILL_BURST_30S":            EventSpec(0.025, 0.12, 6.0),
+    "LEAD_SWING_30S":            EventSpec(0.07, 0.16, 8.0),
+    "KILL_BURST_30S":            EventSpec(0.06, 0.15, 4.0),
 
     # Confirmation / lower-confidence events. main.py uses cluster scoring and
     "T2_TOWER_FALL":             EventSpec(0.035, 0.08, 10.0),
     "COMEBACK":                  EventSpec(0.040, 0.12, 12.0),
     "FIGHT_TO_GOLD_CONFIRM_30S": EventSpec(0.050, 0.12, 6.0),
     # Map-control context only: useful as support for sizing/edge, not a standalone live trigger.
-    "MULTIPLE_T2_TOWERS_DOWN":   EventSpec(0.035, 0.08, 12.0),
+    "MULTIPLE_T2_TOWERS_DOWN":   EventSpec(0.055, 0.12, 8.0),
     "ALL_T2_TOWERS_DOWN":        EventSpec(0.050, 0.12, 15.0),
 }
 
@@ -82,12 +86,15 @@ SUPPRESSIONS: dict[str, set[str]] = {
     "ALL_T3_TOWERS_DOWN": {"MULTIPLE_T3_TOWERS_DOWN", "T3_TOWER_FALL"},
     "MULTI_STRUCTURE_COLLAPSE": {"T2_TOWER_FALL", "T3_TOWER_FALL", "FIRST_T4_TOWER_FALL"},
     "MAJOR_COMEBACK": {"COMEBACK"},
-    "LATE_MAJOR_COMEBACK_REPRICE": {"MAJOR_COMEBACK", "COMEBACK", "LEAD_SWING_60S"},
+    "MAJOR_COMEBACK_RECOVERY_60S": {"COMEBACK_RECOVERY_60S"},
+    "LATE_MAJOR_COMEBACK_REPRICE": {"MAJOR_COMEBACK", "MAJOR_COMEBACK_RECOVERY_60S", "COMEBACK", "COMEBACK_RECOVERY_60S", "LEAD_SWING_60S"},
     "CHAINED_LATE_FIGHT_RECOVERY": {"KILL_CONFIRMED_LEAD_SWING", "LEAD_SWING_60S", "KILL_BURST_30S"},
     "LATE_ECONOMIC_CRASH": {"LEAD_SWING_60S", "LEAD_SWING_30S", "EXTREME_LEAD_SWING_30S"},
     "ULTRA_LATE_WIPE_CONFIRMED": {"ULTRA_LATE_WIPE", "LATE_GAME_WIPE", "KILL_BURST_30S"},
     "STOMP_THROW_WITH_OBJECTIVE_RISK": {"STOMP_THROW", "KILL_BURST_30S"},
     "FIGHT_TO_GOLD_CONFIRM_30S": {"KILL_CONFIRMED_LEAD_SWING", "KILL_BURST_30S"},
+    "KILL_CONFIRMED_LEAD_SWING": {"TEAMFIGHT_SWING_30S"},
+    "KILL_BURST_30S": {"TEAMFIGHT_SWING_30S"},
     "MULTIPLE_T3_TOWERS_DOWN": {"T3_TOWER_FALL"},
     "ALL_T2_TOWERS_DOWN": {"MULTIPLE_T2_TOWERS_DOWN", "T2_TOWER_FALL"},
     "MULTIPLE_T2_TOWERS_DOWN": {"T2_TOWER_FALL"},
@@ -115,7 +122,14 @@ _EVENT_MAX_FILL: dict[str, float] = {
     "ALL_T3_TOWERS_DOWN": 0.87,
     "MULTIPLE_T3_TOWERS_DOWN": 0.85,
     "MAJOR_COMEBACK": 0.85,
+    "MAJOR_COMEBACK_RECOVERY_60S": 0.82,
+    "COMEBACK_RECOVERY_60S": 0.80,
     "FIGHT_TO_GOLD_CONFIRM_30S": 0.80,
+    "KILL_CONFIRMED_LEAD_SWING": 0.85,
+    "TEAMFIGHT_SWING_30S": 0.82,
+    "KILL_BURST_30S": 0.82,
+    "LEAD_SWING_30S": 0.80,
+    "MULTIPLE_T2_TOWERS_DOWN": 0.78,
     "T3_TOWER_FALL": 0.82,
 }
 
@@ -415,7 +429,8 @@ class EventSignalEngine:
                 if et in _HIGH_SEVERITY_ONLY and _event_attr(e, "severity", "") != "high":
                     return {"decision": "skip", "reason": "severity_too_low"}
 
-        if mapping.get("market_type") != "MAP_WINNER":
+        market_type = mapping.get("market_type")
+        if market_type not in ("MAP_WINNER", "MATCH_WINNER"):
             return {"decision": "skip", "reason": "unsupported_market_type"}
 
         game_time = game.get("game_time_sec")
@@ -597,6 +612,35 @@ class EventSignalEngine:
         fair_price = apply_probability_move(anchor_price, expected_move)
         executable_price = min(ask + PAPER_SLIPPAGE_CENTS, 0.99)
         remaining_move = fair_price - current_price
+
+        if market_type == "MATCH_WINNER":
+            series_score_yes = game.get("series_score_yes")
+            series_score_no = game.get("series_score_no")
+            current_game_number = game.get("current_game_number") or game.get("game_number_in_series")
+            series_type_val = mapping.get("series_type") or 3
+            if series_score_yes is not None and series_score_no is not None and current_game_number is not None:
+                try:
+                    series_score_yes = int(series_score_yes)
+                    series_score_no = int(series_score_no)
+                    current_game_number = int(current_game_number)
+                    p_current_map_yes = fair_price
+                    p_next_yes = fair_price
+                    series_fair = compute_bo3_match_p(
+                        p_current_map_yes=max(0.01, min(0.99, p_current_map_yes)),
+                        p_next_yes=max(0.01, min(0.99, p_next_yes)),
+                        series_score_yes=series_score_yes,
+                        series_score_no=series_score_no,
+                        current_game_number=current_game_number,
+                        series_type=int(series_type_val),
+                    )
+                    if not event_favors_yes:
+                        series_fair = 1.0 - series_fair
+                    fair_price = max(0.01, min(0.99, series_fair))
+                    expected_move = fair_price - anchor_price
+                    remaining_move = fair_price - current_price
+                    executable_price = min(ask + PAPER_SLIPPAGE_CENTS, 0.99)
+                except (ValueError, TypeError):
+                    pass
         executable_edge = fair_price - executable_price
         lag = remaining_move
 
@@ -726,12 +770,18 @@ class EventSignalEngine:
                 value *= min(abs_delta / 3000, 2.0)
             elif event_type == "MAJOR_COMEBACK":
                 value *= min(abs_delta / 8000, 2.0)
+            elif event_type == "COMEBACK_RECOVERY_60S":
+                value *= min(abs_delta / 1800, 2.0)
+            elif event_type == "MAJOR_COMEBACK_RECOVERY_60S":
+                value *= min(abs_delta / 3500, 2.0)
             elif event_type in {"LATE_MAJOR_COMEBACK_REPRICE", "LATE_ECONOMIC_CRASH"}:
                 value *= min(abs_delta / 10_000, 2.0)
             elif event_type in {"CHAINED_LATE_FIGHT_RECOVERY", "STOMP_THROW_WITH_OBJECTIVE_RISK"}:
                 value *= min(abs_delta / 5_000, 2.0)
             elif event_type in {"KILL_CONFIRMED_LEAD_SWING", "FIGHT_TO_GOLD_CONFIRM_30S"}:
                 value *= min(abs_delta / _KILL_CONFIRMED_NW_THRESHOLD, 2.0)
+            elif event_type == "TEAMFIGHT_SWING_30S":
+                value *= min(abs_delta / 2.0, 2.0)
             elif event_type in {"KILL_BURST_30S", "ULTRA_LATE_WIPE_CONFIRMED"}:
                 value *= min(abs_delta / _KILL_BURST_MIN, 2.0)
             elif event_type in {
@@ -773,8 +823,12 @@ class EventSignalEngine:
             return 0.48
         if "STOMP_THROW_WITH_OBJECTIVE_RISK" in event_types:
             return 0.40
+        if "MAJOR_COMEBACK_RECOVERY_60S" in event_types:
+            return 0.34
         if "LATE_MAJOR_COMEBACK_REPRICE" in event_types:
             return 0.36
+        if "COMEBACK_RECOVERY_60S" in event_types:
+            return 0.22
         if "CHAINED_LATE_FIGHT_RECOVERY" in event_types:
             return 0.34
         if "LATE_ECONOMIC_CRASH" in event_types:
@@ -830,8 +884,9 @@ class EventSignalEngine:
         }
         support = event_types & {
             "COMEBACK", "MAJOR_COMEBACK", "LEAD_SWING_60S", "LEAD_SWING_30S",
+            "COMEBACK_RECOVERY_60S", "MAJOR_COMEBACK_RECOVERY_60S",
             "EXTREME_LEAD_SWING_30S", "KILL_CONFIRMED_LEAD_SWING",
-            "KILL_BURST_30S", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "STOMP_THROW",
+            "TEAMFIGHT_SWING_30S", "KILL_BURST_30S", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "STOMP_THROW",
             "LATE_MAJOR_COMEBACK_REPRICE", "CHAINED_LATE_FIGHT_RECOVERY",
             "LATE_ECONOMIC_CRASH", "ULTRA_LATE_WIPE_CONFIRMED",
             "STOMP_THROW_WITH_OBJECTIVE_RISK", "FIGHT_TO_GOLD_CONFIRM_30S",
@@ -857,6 +912,8 @@ class EventSignalEngine:
             required += 0.005
         if event_types & {"LATE_MAJOR_COMEBACK_REPRICE", "CHAINED_LATE_FIGHT_RECOVERY", "LATE_ECONOMIC_CRASH", "STOMP_THROW_WITH_OBJECTIVE_RISK"}:
             required += 0.02
+        if event_types & {"COMEBACK_RECOVERY_60S", "MAJOR_COMEBACK_RECOVERY_60S"}:
+            required += 0.01
         if event_types == {"OBJECTIVE_CONVERSION_T2"} or event_types == {"T2_TOWER_FALL"}:
             required += 0.015
         if spread is not None and spread > MAX_SPREAD * 0.5:

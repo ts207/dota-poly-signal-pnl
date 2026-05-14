@@ -1,7 +1,7 @@
 from dota_fair_model.features import DEFAULT_FEATURE_COLUMNS, build_feature_row, row_to_features
 from dota_fair_model.inference import FairModelBundle, predict_yes
 from dota_fair_model.schemas import FEATURE_SCHEMA_VERSION, phase_for_duration
-from dota_fair_model.train import MIN_MATCH_GROUPS_PER_PHASE, MIN_SNAPSHOTS_PER_PHASE
+from dota_fair_model.train import MIN_MATCH_GROUPS_PER_PHASE, MIN_SNAPSHOTS_PER_PHASE, assert_trainable_artifact
 
 
 class FakeModel:
@@ -94,3 +94,30 @@ def test_predict_yes_requires_team_side_mapping():
 def test_training_defaults_require_meaningful_sample_size():
     assert MIN_MATCH_GROUPS_PER_PHASE >= 50
     assert MIN_SNAPSHOTS_PER_PHASE >= 500
+
+
+def test_trainable_artifact_guard_allows_trained_phase():
+    assert_trainable_artifact({"models": {"mid": object()}, "metadata": {"metrics": {}}})
+
+
+def test_trainable_artifact_guard_rejects_empty_model_set():
+    try:
+        assert_trainable_artifact(
+            {
+                "models": {},
+                "metadata": {
+                    "metrics": {
+                        "early": {"skipped": "not_enough_rows"},
+                        "late": {"skipped": "not_enough_match_groups"},
+                    }
+                },
+            }
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("empty model artifact should be rejected")
+
+    assert "no phase models trained" in message
+    assert "early=not_enough_rows" in message
+    assert "late=not_enough_match_groups" in message

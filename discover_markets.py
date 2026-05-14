@@ -35,7 +35,8 @@ def _parse_teams(question: str) -> tuple[str, str]:
     """Best-effort team name extraction from a 'Team A vs Team B' question string."""
     question = re.sub(r"^Dota\s*2:\s*", "", question.strip(), flags=re.I)
     question = re.sub(r"\s*-\s*Game\s*\d+\s*Winner\s*$", "", question, flags=re.I)
-    question = re.sub(r"\s*\([^)]*\)\s*-\s*.*$", "", question)
+    question = re.sub(r"\s*\(BO\d+\)\s*-\s*.*$", "", question)
+    question = re.sub(r"\s*-\s*.*\d{4}.*$", "", question)
     match = re.search(r"^(.+?)\s+vs\.?\s+(.+?)$", question.strip())
     if match:
         return match.group(1).strip(), match.group(2).strip()
@@ -83,6 +84,16 @@ def _is_map_winner_market(market: dict) -> bool:
     if {str(o).casefold() for o in outcomes} <= {"yes", "no", "over", "under"}:
         return False
     return bool(re.search(r"\bGame\s*\d+\s+Winner\b", question, flags=re.I))
+
+
+def _is_bo3_winner_market(market: dict) -> bool:
+    question = str(market.get("question") or market.get("title") or "")
+    outcomes = _parse_outcomes(market.get("outcomes"))
+    if len(outcomes) != 2:
+        return False
+    if {str(o).casefold() for o in outcomes} <= {"yes", "no", "over", "under"}:
+        return False
+    return bool(re.search(r"\(BO3\)", question, flags=re.I))
 
 
 def _extract_next_data(html: str) -> dict:
@@ -185,7 +196,7 @@ def _append_provisional(path: str, entries: list[dict]) -> None:
 async def main(auto_write: bool = False):
     async with aiohttp.ClientSession() as session:
         markets = await fetch_active_markets(session)
-        dota_markets = [m for m in filter_dota_markets(markets) if _is_map_winner_market(m)]
+        dota_markets = [m for m in filter_dota_markets(markets) if _is_map_winner_market(m) or _is_bo3_winner_market(m)]
         if not dota_markets:
             print("Gamma discovery found no map-winner Dota markets; trying public Polymarket Dota page fallback...")
             dota_markets = await fetch_polymarket_dota_page_markets(session)
@@ -231,19 +242,22 @@ async def main(auto_write: bool = False):
         print("outcomes:", outcomes)
 
         if yes and yes not in existing_tokens and no not in existing_tokens:
+            is_bo3 = _is_bo3_winner_market(m)
             entry = {
                 "name": question,
                 "market_id": market_id,
                 "condition_id": condition_id,
                 "yes_token_id": yes,
                 "no_token_id": no or "",
-                "market_type": "MAP_WINNER",
+                "market_type": "MATCH_WINNER" if is_bo3 else "MAP_WINNER",
                 "yes_team": yes_team,
                 "no_team": no_team,
                 "outcome_order_verified": bool(pairs),
                 "dota_match_id": "STEAM_MATCH_OR_LOBBY_ID_HERE",
                 "confidence": 0.0,
             }
+            if is_bo3:
+                entry["series_type"] = 3
             if m.get("gameStartTime"):
                 entry["scheduled_start_utc"] = str(m.get("gameStartTime"))
             if m.get("source_url"):

@@ -23,7 +23,7 @@ from config import (
     STEAM_API_KEY, STEAM_POLL_SECONDS, PAPER_EXECUTION_DELAY_MS, LIVE_TRADING,
     ALLOW_CONFIRMATION_ONLY_LIVE_TRADES, MAX_BOOK_AGE_MS, MIN_EXECUTABLE_EDGE,
     MIN_LAG, MAX_SPREAD, MIN_ASK_SIZE_USD, PAPER_SLIPPAGE_CENTS, PAPER_TRADE_SIZE_USD,
-    PRICE_LOOKBACK_SEC
+    PRICE_LOOKBACK_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS
 )
 from sync_markets import sync_markets_to_games, load_markets, write_markets
 
@@ -240,8 +240,8 @@ async def steam_loop(
                             "liveleague_usage": classify_liveleague_lag(lag),
                         })
 
-                    # Guard: Ignore non-TopLive sources for event detection (too stale)
-                    if data_source != "top_live":
+                    # Guard: Ignore non-TopLive sources for event detection if required
+                    if REQUIRE_TOP_LIVE_FOR_SIGNALS and data_source != "top_live":
                         continue
 
                     # Guard: Ignore backward-moving game time (stale/out-of-order snapshots)

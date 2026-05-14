@@ -123,6 +123,7 @@ LIVE_LEAGUE_FEATURES_CSV_PATH = os.getenv("LIVE_LEAGUE_FEATURES_CSV_PATH", "logs
 LIVE_LEAGUE_RAW_JSONL_PATH = os.getenv("LIVE_LEAGUE_RAW_JSONL_PATH", "logs/liveleague_raw.jsonl")
 SOURCE_DELAY_CSV_PATH = os.getenv("SOURCE_DELAY_CSV_PATH", "logs/source_delay.csv")
 MARKOUTS_CSV_PATH = os.getenv("MARKOUTS_CSV_PATH", "logs/markouts.csv")
+BOOK_REFRESH_RESCUE_CSV_PATH = os.getenv("BOOK_REFRESH_RESCUE_CSV_PATH", "logs/book_refresh_rescue.csv")
 
 if MODE not in {"paper", "live"}:
     raise RuntimeError("MODE must be paper or live-test compatible live.")
@@ -146,6 +147,7 @@ def _config_hash() -> str:
         "MAX_SOURCE_UPDATE_AGE_SEC", "MIN_LAG", "MIN_EXECUTABLE_EDGE",
         "MAX_SPREAD", "MIN_ASK_SIZE_USD", "PAPER_EXECUTION_DELAY_MS",
         "EVENT_LEAD_SWING_30S", "EVENT_LEAD_SWING_60S",
+        "BOOK_REFRESH_RESCUE_CSV_PATH",
     ]
     payload = {key: os.getenv(key) for key in keys}
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:12]

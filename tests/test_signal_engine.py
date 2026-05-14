@@ -212,6 +212,17 @@ def test_kill_confirmed_lead_swing_can_fire_at_medium_severity_when_lag_is_large
     assert result["decision"] == "paper_buy_yes"
 
 
+def test_teamfight_swing_can_fire_when_lag_is_large_enough():
+    now_ns = time.time_ns()
+    engine = _engine_with_price(TOKEN_YES, 0.45)
+    result = engine.evaluate(
+        "TEAMFIGHT_SWING_30S", "radiant", 2,
+        _game(now_ns, game_time_sec=1200), _mapping(), _book(now_ns), None,
+        severity="medium",
+    )
+    assert result["decision"] == "paper_buy_yes"
+
+
 def test_kill_burst_medium_severity_is_too_small_standalone():
     now_ns = time.time_ns()
     engine = _engine_with_price(TOKEN_YES, 0.45)
@@ -224,7 +235,7 @@ def test_kill_burst_medium_severity_is_too_small_standalone():
     assert result["reason"] == "edge_too_small"
 
 
-def test_high_severity_kill_burst_still_confirmation_only():
+def test_high_severity_kill_burst_can_fire_when_lag_is_large_enough():
     now_ns = time.time_ns()
     engine = _engine_with_price(TOKEN_YES, 0.45)
     result = engine.evaluate(
@@ -232,8 +243,22 @@ def test_high_severity_kill_burst_still_confirmation_only():
         _game(now_ns, game_time_sec=1200), _mapping(), _book(now_ns), None,
         severity="high",
     )
-    assert result["decision"] == "skip"
-    assert result["reason"] == "edge_too_small"
+    assert result["decision"] == "paper_buy_yes"
+
+
+def test_confirmed_short_window_events_are_primary_for_clusters():
+    from event_taxonomy import event_is_primary, event_tier
+
+    assert event_tier("KILL_CONFIRMED_LEAD_SWING") == "B"
+    assert event_is_primary("KILL_CONFIRMED_LEAD_SWING") is True
+    assert event_tier("TEAMFIGHT_SWING_30S") == "B"
+    assert event_is_primary("TEAMFIGHT_SWING_30S") is True
+    assert event_tier("KILL_BURST_30S") == "B"
+    assert event_is_primary("KILL_BURST_30S") is True
+    assert event_tier("LEAD_SWING_30S") == "B"
+    assert event_is_primary("LEAD_SWING_30S") is True
+    assert event_tier("LEAD_SWING_60S") == "C"
+    assert event_is_primary("LEAD_SWING_60S") is False
 
 
 def test_cooldown_blocks_second_signal():

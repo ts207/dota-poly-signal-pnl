@@ -76,6 +76,11 @@ def main():
     df = df_features.merge(labels[["match_id", "radiant_win"]], on="match_id", how="inner")
     labeled_matches_count = df["match_id"].nunique()
 
+    # merge_asof requires non-null sorted 'on' field and matching dtypes
+    df = df.dropna(subset=["game_time_sec"])
+    df["game_time_sec"] = df["game_time_sec"].astype(float)
+    df = df.sort_values("game_time_sec")
+
     # 3. Nearest-Time Join for Signals
     signals_path = logs_dir / "signals.csv"
     if signals_path.exists():
@@ -94,8 +99,8 @@ def main():
         rename_map = {c: f"sig_{c}" for c in available_sig_cols if c not in ["match_id", "game_time_sec"]}
         df_sig.rename(columns=rename_map, inplace=True)
 
-        # merge_asof requires sorted 'on' field
-        df = df.sort_values("game_time_sec")
+        df_sig = df_sig.dropna(subset=["game_time_sec"])
+        df_sig["game_time_sec"] = df_sig["game_time_sec"].astype(float)
         df_sig = df_sig.sort_values("game_time_sec")
         
         df = pd.merge_asof(
@@ -121,7 +126,8 @@ def main():
         rename_map_lat = {c: f"lat_{c}" for c in available_lat if c not in ["match_id", "game_time_sec"]}
         df_lat.rename(columns=rename_map_lat, inplace=True)
 
-        df = df.sort_values("game_time_sec")
+        df_lat = df_lat.dropna(subset=["game_time_sec"])
+        df_lat["game_time_sec"] = df_lat["game_time_sec"].astype(float)
         df_lat = df_lat.sort_values("game_time_sec")
         
         df = pd.merge_asof(
@@ -166,10 +172,10 @@ def main():
         f.write(f"- **Markout coverage %**: {markout_cov:.1f}%\n")
         
         f.write("\n### Phase Distribution\n")
-        f.write(df["phase_bucket"].value_counts().to_markdown())
+        f.write(df["phase_bucket"].value_counts().to_string())
         
         f.write("\n\n### Label Distribution (radiant_win)\n")
-        f.write(df["radiant_win"].value_counts().to_markdown())
+        f.write(df["radiant_win"].value_counts().to_string())
         
         f.write("\n\n### Null-rate Table for Core Model Fields\n")
         core_fields = [
@@ -178,7 +184,7 @@ def main():
         ]
         available_core = [c for c in core_fields if c in df.columns]
         null_rates = df[available_core].isnull().mean() * 100
-        f.write(null_rates.to_frame("null_rate_%").to_markdown())
+        f.write(null_rates.to_frame("null_rate_%").to_string())
         f.write("\n")
 
     print(f"Coverage report saved to {coverage_file}")

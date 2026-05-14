@@ -17,8 +17,13 @@ WINDOW_TOLERANCE_SEC = {30: 12, 60: 20}
 
 COMEBACK_MIN_PRIOR_DEFICIT = 3000
 MAJOR_COMEBACK_PRIOR_DEFICIT = 8000
+COMEBACK_RECOVERY_MIN_SWING_60S = 1800
+MAJOR_COMEBACK_RECOVERY_MIN_SWING_60S = 3500
 KILL_CONFIRMED_LEAD_SWING_GOLD_30S = 2500
 KILL_CONFIRMED_LEAD_SWING_KILLS_30S = 2
+TEAMFIGHT_SWING_KILLS_30S = 2
+TEAMFIGHT_SWING_MIN_NW_CONFIRMATION = 1000
+BLOODY_EVEN_FIGHT_KILLS_30S = 4
 KILL_BURST_30S = 3
 KILL_BURST_MIN_NW_CONFIRMATION = 500
 STOMP_THROW_MIN_LEAD = 12_000
@@ -40,10 +45,13 @@ LATE_ECONOMIC_CRASH_TIME = 50 * 60
 CONVERSION_SUPPORT_EVENTS = frozenset({
     "COMEBACK",
     "MAJOR_COMEBACK",
+    "COMEBACK_RECOVERY_60S",
+    "MAJOR_COMEBACK_RECOVERY_60S",
     "LEAD_SWING_60S",
     "LEAD_SWING_30S",
     "EXTREME_LEAD_SWING_30S",
     "KILL_CONFIRMED_LEAD_SWING",
+    "TEAMFIGHT_SWING_30S",
     "KILL_BURST_30S",
     "LATE_GAME_WIPE",
     "ULTRA_LATE_WIPE",
@@ -83,12 +91,16 @@ _EVENT_BASE_PRESSURE: dict[str, float] = {
     "MULTIPLE_T3_TOWERS_DOWN": 0.50,
     "T3_TOWER_FALL": 0.35,
     "MAJOR_COMEBACK": 0.55,
+    "MAJOR_COMEBACK_RECOVERY_60S": 0.46,
+    "COMEBACK_RECOVERY_60S": 0.32,
     "LATE_MAJOR_COMEBACK_REPRICE": 0.62,
     "CHAINED_LATE_FIGHT_RECOVERY": 0.58,
     "LATE_ECONOMIC_CRASH": 0.55,
     "ULTRA_LATE_WIPE_CONFIRMED": 0.70,
     "STOMP_THROW_WITH_OBJECTIVE_RISK": 0.62,
     "FIGHT_TO_GOLD_CONFIRM_30S": 0.35,
+    "TEAMFIGHT_SWING_30S": 0.30,
+    "BLOODY_EVEN_FIGHT_30S": 0.12,
     "COMEBACK": 0.35,
     "EXTREME_LEAD_SWING_30S": 0.50,
     "KILL_CONFIRMED_LEAD_SWING": 0.40,
@@ -116,12 +128,16 @@ _EVENT_CONFIDENCE: dict[str, float] = {
     "MULTIPLE_T3_TOWERS_DOWN": 0.65,
     "T3_TOWER_FALL": 0.50,
     "MAJOR_COMEBACK": 0.80,
+    "MAJOR_COMEBACK_RECOVERY_60S": 0.76,
+    "COMEBACK_RECOVERY_60S": 0.62,
     "LATE_MAJOR_COMEBACK_REPRICE": 0.82,
     "CHAINED_LATE_FIGHT_RECOVERY": 0.78,
     "LATE_ECONOMIC_CRASH": 0.72,
     "ULTRA_LATE_WIPE_CONFIRMED": 0.86,
     "STOMP_THROW_WITH_OBJECTIVE_RISK": 0.80,
     "FIGHT_TO_GOLD_CONFIRM_30S": 0.62,
+    "TEAMFIGHT_SWING_30S": 0.58,
+    "BLOODY_EVEN_FIGHT_30S": 0.35,
     "COMEBACK": 0.55,
     "EXTREME_LEAD_SWING_30S": 0.70,
     "KILL_CONFIRMED_LEAD_SWING": 0.65,
@@ -217,6 +233,7 @@ class EventDetector:
             events.extend(self._comeback_events(previous, snapshot, mapping))
 
         events.extend(self._lead_swing_events(hist, snapshot, mapping))
+        events.extend(self._comeback_recovery_events(hist, snapshot, mapping))
         events.extend(self._score_confirmed_events(hist, snapshot, mapping))
         events.extend(self._strategic_composite_events(events, snapshot, mapping))
         events.extend(self._objective_conversion_events(events, snapshot, mapping))
@@ -401,13 +418,18 @@ class EventDetector:
 
             if (
                 cur_time >= LATE_MAJOR_COMEBACK_TIME
-                and {"MAJOR_COMEBACK", "LEAD_SWING_60S"} <= types
+                and (
+                    {"MAJOR_COMEBACK", "LEAD_SWING_60S"} <= types
+                    or {"MAJOR_COMEBACK_RECOVERY_60S", "LEAD_SWING_60S"} <= types
+                    or "MAJOR_COMEBACK_RECOVERY_60S" in types
+                )
                 and self._cooldown_ok(cur, "LATE_MAJOR_COMEBACK_REPRICE", direction)
             ):
+                reprice_source = "MAJOR_COMEBACK" if "MAJOR_COMEBACK" in types else "MAJOR_COMEBACK_RECOVERY_60S"
                 out.append(self._base_event(
                     cur, mapping,
                     event_type="LATE_MAJOR_COMEBACK_REPRICE",
-                    previous_value="MAJOR_COMEBACK+LEAD_SWING_60S",
+                    previous_value=f"{reprice_source}+LEAD_SWING_60S",
                     current_value="late_comeback_reprice",
                     delta=strongest_delta, window_sec=60, direction=direction,
                     severity="high",
@@ -501,7 +523,7 @@ class EventDetector:
             return
         types = {event.event_type for event in group}
         qualifies = (
-            types & {"KILL_CONFIRMED_LEAD_SWING", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "LATE_ECONOMIC_CRASH"}
+            types & {"KILL_CONFIRMED_LEAD_SWING", "TEAMFIGHT_SWING_30S", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "LATE_ECONOMIC_CRASH"}
             or any(e.event_type == "LEAD_SWING_60S" and isinstance(e.delta, (int, float)) and abs(e.delta) >= 5000 for e in group)
         )
         if not qualifies:
@@ -776,6 +798,65 @@ class EventDetector:
             ))
         return out
 
+    def _comeback_recovery_events(self, hist: deque[dict], cur: dict, mapping: dict | None) -> list[DotaEvent]:
+        """Detect large deficit recovery before the scoreboard lead crosses zero.
+
+        `_comeback_events` captures actual lead flips. This captures the earlier
+        reversal pressure where a team remains behind but removes enough deficit
+        in a 60s window that the market usually starts repricing.
+        """
+        cur_lead = cur.get("radiant_lead")
+        cur_time = cur.get("game_time_sec")
+        if cur_lead is None or cur_time is None or not hist:
+            return []
+
+        past = self._find_past_snapshot(hist, cur_time - 60, 60)
+        if not past or past.get("radiant_lead") is None:
+            return []
+
+        past_lead = past["radiant_lead"]
+        if past_lead == 0 or cur_lead == 0 or (past_lead > 0) != (cur_lead > 0):
+            return []
+
+        previous_deficit = abs(past_lead)
+        if previous_deficit < COMEBACK_MIN_PRIOR_DEFICIT:
+            return []
+
+        lead_delta = cur_lead - past_lead
+        if past_lead < 0:
+            direction = "radiant"
+            recovered = lead_delta
+        else:
+            direction = "dire"
+            recovered = -lead_delta
+
+        if recovered <= 0:
+            return []
+
+        if previous_deficit >= MAJOR_COMEBACK_PRIOR_DEFICIT:
+            event_type = "MAJOR_COMEBACK_RECOVERY_60S"
+            min_recovery = MAJOR_COMEBACK_RECOVERY_MIN_SWING_60S
+        else:
+            event_type = "COMEBACK_RECOVERY_60S"
+            min_recovery = COMEBACK_RECOVERY_MIN_SWING_60S
+
+        if recovered < min_recovery:
+            return []
+        if not self._cooldown_ok(cur, event_type, direction):
+            return []
+
+        return [self._base_event(
+            cur, mapping,
+            event_type=event_type,
+            previous_value=past_lead,
+            current_value=cur_lead,
+            delta=lead_delta,
+            window_sec=60,
+            direction=direction,
+            severity="high" if recovered >= min_recovery * 1.5 else "medium",
+            threshold=min_recovery,
+        )]
+
     def _score_confirmed_events(self, hist: deque[dict], cur: dict, mapping: dict | None) -> list[DotaEvent]:
         cur_time = cur.get("game_time_sec")
         cur_lead = cur.get("radiant_lead")
@@ -834,6 +915,25 @@ class EventDetector:
                     severity="high" if abs(lead_delta) >= EVENT_LEAD_SWING_30S * 2 else "medium",
                 ))
 
+        if abs(kill_diff_delta) >= TEAMFIGHT_SWING_KILLS_30S:
+            direction = "radiant" if kill_diff_delta > 0 else "dire"
+            lead_same_direction = (
+                lead_delta >= TEAMFIGHT_SWING_MIN_NW_CONFIRMATION if direction == "radiant"
+                else lead_delta <= -TEAMFIGHT_SWING_MIN_NW_CONFIRMATION
+            )
+            if lead_same_direction and self._cooldown_ok(cur, "TEAMFIGHT_SWING_30S", direction):
+                out.append(self._base_event(
+                    cur, mapping,
+                    event_type="TEAMFIGHT_SWING_30S",
+                    previous_value=f"{past_r_score}-{past_d_score}",
+                    current_value=f"{cur_r_score}-{cur_d_score}",
+                    delta=kill_diff_delta,
+                    window_sec=30,
+                    direction=direction,
+                    severity="high" if abs(kill_diff_delta) >= 3 or abs(lead_delta) >= KILL_CONFIRMED_LEAD_SWING_GOLD_30S else "medium",
+                    threshold=TEAMFIGHT_SWING_MIN_NW_CONFIRMATION,
+                ))
+
         if abs(kill_diff_delta) >= KILL_BURST_30S:
             direction = "radiant" if kill_diff_delta > 0 else "dire"
             lead_same_direction = (
@@ -861,6 +961,24 @@ class EventDetector:
                         delta=kill_diff_delta, window_sec=30, direction=direction,
                         severity=severity,
                     ))
+
+        total_kills = radiant_kills + dire_kills
+        if (
+            total_kills >= BLOODY_EVEN_FIGHT_KILLS_30S
+            and abs(kill_diff_delta) <= 1
+            and abs(lead_delta) < TEAMFIGHT_SWING_MIN_NW_CONFIRMATION
+            and self._cooldown_ok(cur, "BLOODY_EVEN_FIGHT_30S", None)
+        ):
+            out.append(self._base_event(
+                cur, mapping,
+                event_type="BLOODY_EVEN_FIGHT_30S",
+                previous_value=f"{past_r_score}-{past_d_score}",
+                current_value=f"{cur_r_score}-{cur_d_score}",
+                delta=kill_diff_delta,
+                window_sec=30,
+                direction=None,
+                severity="medium",
+            ))
 
         return out
 
@@ -988,10 +1106,13 @@ def _conversion_tower_rank(event_type: str) -> int:
 def _conversion_support_rank(event_type: str) -> int:
     ranks = {
         "KILL_BURST_30S": 1,
+        "TEAMFIGHT_SWING_30S": 2,
         "LEAD_SWING_30S": 2,
         "LEAD_SWING_60S": 2,
         "KILL_CONFIRMED_LEAD_SWING": 3,
         "COMEBACK": 3,
+        "COMEBACK_RECOVERY_60S": 3,
+        "MAJOR_COMEBACK_RECOVERY_60S": 5,
         "EXTREME_LEAD_SWING_30S": 4,
         "LATE_GAME_WIPE": 5,
         "ULTRA_LATE_WIPE": 6,

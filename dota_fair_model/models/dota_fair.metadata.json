@@ -1,0 +1,121 @@
+{
+  "calibration_method": "sigmoid",
+  "estimator": "ExtraTreesClassifier",
+  "feature_names": [
+    "game_time_sec",
+    "radiant_score",
+    "dire_score",
+    "score_diff",
+    "radiant_tower_state",
+    "dire_tower_state",
+    "radiant_barracks_state",
+    "dire_barracks_state",
+    "radiant_net_worth",
+    "dire_net_worth",
+    "net_worth_diff",
+    "top1_net_worth_diff",
+    "top2_net_worth_diff",
+    "top3_net_worth_diff",
+    "level_diff",
+    "gpm_diff",
+    "xpm_diff",
+    "gold_diff",
+    "radiant_dead_count",
+    "dire_dead_count",
+    "radiant_core_dead_count",
+    "dire_core_dead_count",
+    "max_respawn_timer",
+    "radiant_has_aegis",
+    "dire_has_aegis",
+    "game_time_sec_missing",
+    "radiant_net_worth_missing",
+    "dire_net_worth_missing",
+    "net_worth_diff_missing",
+    "top1_net_worth_diff_missing",
+    "top2_net_worth_diff_missing",
+    "top3_net_worth_diff_missing",
+    "level_diff_missing",
+    "gpm_diff_missing",
+    "xpm_diff_missing",
+    "gold_diff_missing",
+    "max_respawn_timer_missing",
+    "radiant_has_aegis_missing",
+    "dire_has_aegis_missing"
+  ],
+  "metrics": {
+    "early": {
+      "brier_score": 0.25033463889037266,
+      "calibration_method": "sigmoid",
+      "log_loss": 0.6938935498441732,
+      "matches": 391,
+      "rows": 3910,
+      "test_rows": 790
+    },
+    "laning": {
+      "brier_score": 0.2370079440559842,
+      "calibration_method": "sigmoid",
+      "log_loss": 0.6662653118316392,
+      "matches": 391,
+      "rows": 3120,
+      "test_rows": 632
+    },
+    "late": {
+      "brier_score": 0.19265224730716712,
+      "calibration_method": "sigmoid",
+      "log_loss": 0.563788152874425,
+      "matches": 253,
+      "rows": 2173,
+      "test_rows": 454
+    },
+    "mid": {
+      "brier_score": 0.19489169158052605,
+      "calibration_method": "sigmoid",
+      "log_loss": 0.5693736646425331,
+      "matches": 388,
+      "rows": 4346,
+      "test_rows": 900
+    },
+    "ultra_late": {
+      "brier_score": 0.22311489182027722,
+      "calibration_method": "sigmoid",
+      "log_loss": 0.636606791068217,
+      "matches": 61,
+      "rows": 589,
+      "test_rows": 143
+    }
+  },
+  "phase": "all",
+  "phase_counts": {
+    "early": {
+      "matches": 391,
+      "rows": 3910
+    },
+    "laning": {
+      "matches": 391,
+      "rows": 3120
+    },
+    "late": {
+      "matches": 253,
+      "rows": 2173
+    },
+    "mid": {
+      "matches": 388,
+      "rows": 4346
+    },
+    "ultra_late": {
+      "matches": 61,
+      "rows": 589
+    }
+  },
+  "schema_version": "dota_fair_v2",
+  "target_name": "radiant_win",
+  "top_features": {
+    "early": [],
+    "laning": [],
+    "late": [],
+    "mid": [],
+    "ultra_late": []
+  },
+  "training_match_count": 391,
+  "training_rows": 14138
+}
