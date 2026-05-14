@@ -72,6 +72,8 @@ MAX_BOOK_AGE_MS = int(os.getenv("MAX_BOOK_AGE_MS", "750"))
 # a backward-compatible default for MIN_LAG only when MIN_LAG is unset.
 MIN_LAG = float(os.getenv("MIN_LAG", os.getenv("MIN_EDGE", "0.08")))
 MIN_EXECUTABLE_EDGE = float(os.getenv("MIN_EXECUTABLE_EDGE", "0.03"))
+MIN_ML_EDGE = float(os.getenv("MIN_ML_EDGE", "0.10"))
+ML_STRATEGY_ENABLED = os.getenv("ML_STRATEGY_ENABLED", "true").lower() in {"1", "true", "yes"}
 PRICE_LOOKBACK_SEC = float(os.getenv("PRICE_LOOKBACK_SEC", "10"))
 DEFAULT_MAX_FILL_PRICE = float(os.getenv("DEFAULT_MAX_FILL_PRICE", "0.80"))
 MAX_SPREAD = float(os.getenv("MAX_SPREAD", "0.15"))
@@ -82,6 +84,8 @@ PAPER_EXECUTION_DELAY_MS = int(os.getenv("PAPER_EXECUTION_DELAY_MS", "0"))
 # Hard cap on total open paper exposure per match (USD). Prevents runaway stacking
 # when multiple events fire in the same direction within a single game.
 MAX_OPEN_USD_PER_MATCH = float(os.getenv("MAX_OPEN_USD_PER_MATCH", "150"))
+# Prevent immediate re-entry churn after a paper exit in the same token.
+PAPER_REENTRY_COOLDOWN_SEC = float(os.getenv("PAPER_REENTRY_COOLDOWN_SEC", "300"))
 
 # Exit thresholds
 EXIT_TAKE_PROFIT   = float(os.getenv("EXIT_TAKE_PROFIT",    "0.95"))   # absolute max TP (game-over)
@@ -95,21 +99,22 @@ EXIT_HORIZON_BY_EVENT: dict[str, int] = {
     "FIRST_T4_TOWER_FALL":       120,
     "ULTRA_LATE_WIPE":           120,
     "LATE_GAME_WIPE":            120,
-    "STOMP_THROW":               120,
-    "MULTIPLE_T3_TOWERS_DOWN":   120,
-    "T3_TOWER_FALL":             120,
-    "MAJOR_COMEBACK":            120,
-    "COMEBACK":                  120,
-    "LEAD_SWING_60S":            120,
-    "LEAD_SWING_30S":            120,
-    "KILL_CONFIRMED_LEAD_SWING": 120,
-    "KILL_BURST_30S":            90,
-    "T2_TOWER_FALL":             90,
-    "MULTIPLE_T2_TOWERS_DOWN":   90,
-    "ALL_T2_TOWERS_DOWN":        90,
-    "OBJECTIVE_CONVERSION_T2":   90,
-    "OBJECTIVE_CONVERSION_T3":   120,
-    "OBJECTIVE_CONVERSION_T4":   120,
+    "STOMP_THROW":               60,
+    "MULTIPLE_T3_TOWERS_DOWN":   90,
+    "T3_TOWER_FALL":             90,
+    "MAJOR_COMEBACK":            90,
+    "COMEBACK":                  60,
+    "LEAD_SWING_60S":            60,
+    "LEAD_SWING_30S":            60,
+    "KILL_CONFIRMED_LEAD_SWING": 60,
+    "KILL_BURST_30S":            60,
+    "T2_TOWER_FALL":             60,
+    "MULTIPLE_T2_TOWERS_DOWN":   60,
+    "ALL_T2_TOWERS_DOWN":        60,
+    "OBJECTIVE_CONVERSION_T2":   60,
+    "OBJECTIVE_CONVERSION_T3":   90,
+    "OBJECTIVE_CONVERSION_T4":   90,
+    "ML_ARBITRAGE":              120,
 }
 # Safety net: force-close any position that stays open longer than this (game_over missed).
 MAX_HOLD_HOURS     = float(os.getenv("MAX_HOLD_HOURS",      "4"))
@@ -136,7 +141,7 @@ EVENT_LEAD_SWING_60S = int(os.getenv("EVENT_LEAD_SWING_60S", "3000"))
 EVENT_COOLDOWN_GAME_SECONDS = int(os.getenv("EVENT_COOLDOWN_GAME_SECONDS", "15"))
 REACTION_WINDOW_SECONDS = int(os.getenv("REACTION_WINDOW_SECONDS", "30"))
 BOOK_MOVE_MIN_CENTS = float(os.getenv("BOOK_MOVE_MIN_CENTS", "0.01"))
-REALTIME_STATS_ENABLED = os.getenv("REALTIME_STATS_ENABLED", "false").lower() in {"1", "true", "yes"}
+REALTIME_STATS_ENABLED = os.getenv("REALTIME_STATS_ENABLED", "true").lower() in {"1", "true", "yes"}
 REALTIME_STATS_STALE_SEC = int(os.getenv("REALTIME_STATS_STALE_SEC", "30"))
 
 

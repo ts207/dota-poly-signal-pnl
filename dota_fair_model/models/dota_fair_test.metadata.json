@@ -46,67 +46,57 @@
   ],
   "metrics": {
     "early": {
-      "brier_score": 0.16452561077938635,
+      "brier_score": 0.015857546949778364,
       "calibration_method": "sigmoid",
-      "log_loss": 0.5014107159764842,
-      "matches": 388,
-      "rows": 3880,
-      "test_rows": 780
+      "log_loss": 0.10356940808323996,
+      "matches": 8,
+      "rows": 80,
+      "test_rows": 20
     },
     "laning": {
-      "brier_score": 0.16772401326474362,
+      "brier_score": 0.0892216281606368,
       "calibration_method": "sigmoid",
-      "log_loss": 0.5062421323749405,
-      "matches": 388,
-      "rows": 3093,
-      "test_rows": 619
+      "log_loss": 0.3088258888446862,
+      "matches": 8,
+      "rows": 64,
+      "test_rows": 16
     },
     "late": {
-      "brier_score": 0.17052177599450155,
-      "calibration_method": "sigmoid",
-      "log_loss": 0.5463047580961454,
-      "matches": 255,
-      "rows": 2127,
-      "test_rows": 386
+      "skipped": "not_enough_rows"
     },
     "mid": {
-      "brier_score": 0.1478667404156104,
+      "brier_score": 0.06003298301675547,
       "calibration_method": "sigmoid",
-      "log_loss": 0.4464579017546685,
-      "matches": 383,
-      "rows": 4280,
-      "test_rows": 856
+      "log_loss": 0.23012887607193522,
+      "matches": 8,
+      "rows": 87,
+      "test_rows": 21
     },
     "ultra_late": {
-      "brier_score": 0.2648187107877809,
-      "calibration_method": "sigmoid",
-      "log_loss": 0.7946209213563795,
-      "matches": 53,
-      "rows": 546,
-      "test_rows": 117
+      "skipped": "not_enough_rows"
     }
   },
   "phase": "all",
   "phase_counts": {
     "early": {
-      "matches": 388,
-      "rows": 3880
+      "matches": 8,
+      "rows": 80
     },
     "laning": {
-      "matches": 388,
-      "rows": 3093
+      "matches": 8,
+      "rows": 64
     },
     "late": {
-      "matches": 255,
-      "rows": 2127
+      "matches": 3,
+      "rows": 32
     },
     "mid": {
-      "matches": 383,
-      "rows": 4280
+      "matches": 8,
+      "rows": 87
     },
     "ultra_late": {
-      "matches": 53,
-      "rows": 546
+      "matches": 2,
+      "rows": 4
     }
   },
   "schema_version": "dota_fair_v2",
@@ -115,64 +105,40 @@
     "early": [
       "radiant_team_win_ratio",
       "dire_team_win_ratio",
-      "top3_net_worth_diff",
-      "top2_net_worth_diff",
-      "top1_net_worth_diff",
-      "gold_diff",
-      "net_worth_diff",
-      "xpm_diff",
       "gpm_diff",
-      "score_diff"
+      "top1_net_worth_diff",
+      "top2_net_worth_diff",
+      "net_worth_diff",
+      "gold_diff",
+      "radiant_score",
+      "xpm_diff",
+      "top3_net_worth_diff"
     ],
     "laning": [
       "radiant_team_win_ratio",
       "dire_team_win_ratio",
-      "gpm_diff",
-      "top2_net_worth_diff",
-      "xpm_diff",
-      "top3_net_worth_diff",
-      "top1_net_worth_diff",
-      "net_worth_diff",
-      "gold_diff",
-      "score_diff"
-    ],
-    "late": [
-      "radiant_team_win_ratio",
-      "dire_team_win_ratio",
-      "gpm_diff",
-      "net_worth_diff",
-      "gold_diff",
-      "xpm_diff",
-      "top3_net_worth_diff",
-      "top2_net_worth_diff",
       "score_diff",
-      "dire_score"
-    ],
-    "mid": [
-      "radiant_team_win_ratio",
-      "dire_team_win_ratio",
       "gpm_diff",
-      "net_worth_diff",
-      "gold_diff",
-      "xpm_diff",
-      "score_diff",
       "top3_net_worth_diff",
       "top2_net_worth_diff",
+      "net_worth_diff",
+      "gold_diff",
+      "dire_score",
       "top1_net_worth_diff"
     ],
-    "ultra_late": [
-      "radiant_team_win_ratio",
+    "mid": [
       "dire_team_win_ratio",
-      "gpm_diff",
-      "xpm_diff",
-      "dire_score",
+      "radiant_team_win_ratio",
       "score_diff",
-      "net_worth_diff",
+      "dire_score",
+      "gpm_diff",
       "gold_diff",
+      "top3_net_worth_diff",
       "top2_net_worth_diff",
-      "radiant_net_worth"
+      "net_worth_diff",
+      "top1_net_worth_diff"
     ]
   },
-  "training_match_count": 388,
-  "training_rows": 13926
+  "training_match_count": 8,
+  "training_rows": 267
 }

@@ -73,6 +73,29 @@ def test_force_exit_sells_at_bid_not_mid():
     assert closed.pnl_usd == pytest.approx(5.0)
 
 
+def test_reentry_cooldown_blocks_immediate_rebuy_after_exit():
+    trader = PaperTrader()
+    store = Store({"YES": {"best_ask": 0.50, "best_bid": 0.48, "ask_size": 100}})
+
+    pos, reason = trader.enter(
+        signal=_signal(event_type="ML_ARBITRAGE", fair_price=0.80, expected_move=0.20),
+        token_id="YES", side="YES", book_store=store,
+        match_id="M1", market_name="Test", opposing_token_id="NO",
+    )
+    assert pos is not None, reason
+
+    closed = trader.force_exit("YES", store, "stop_loss")
+    assert closed is not None
+
+    rebuy, reason = trader.enter(
+        signal=_signal(event_type="ML_ARBITRAGE", fair_price=0.80, expected_move=0.20),
+        token_id="YES", side="YES", book_store=store,
+        match_id="M1", market_name="Test", opposing_token_id="NO",
+    )
+    assert rebuy is None
+    assert reason.startswith("reentry_cooldown")
+
+
 def test_take_profit_uses_fair_price_not_entry_plus_expected_move():
     trader = PaperTrader()
     pos, reason = trader.enter(
@@ -86,3 +109,20 @@ def test_take_profit_uses_fair_price_not_entry_plus_expected_move():
     closed = trader.check_exits(Store({"YES": {"best_bid": 0.67, "best_ask": 0.69}}), set())
     assert len(closed) == 1
     assert closed[0].exit_reason == "take_profit"
+
+
+def test_dynamic_model_fair_can_trigger_value_exit():
+    trader = PaperTrader()
+    pos, reason = trader.enter(
+        signal=_signal(ask=0.50, fair_price=0.70, expected_move=0.20),
+        token_id="YES", side="YES",
+        book_store=Store({"YES": {"best_ask": 0.50, "best_bid": 0.48, "ask_size": 100}}),
+        match_id="M1", market_name="Test", opposing_token_id="NO",
+    )
+    assert pos is not None, reason
+
+    trader.update_fair_value("YES", 0.49)
+    closed = trader.check_exits(Store({"YES": {"best_bid": 0.49, "best_ask": 0.51}}), set())
+
+    assert len(closed) == 1
+    assert closed[0].exit_reason == "model_value_exit"

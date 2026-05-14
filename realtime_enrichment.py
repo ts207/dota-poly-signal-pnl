@@ -56,29 +56,52 @@ def parse_player_net_worth(data: dict | None) -> dict[str, Any] | None:
     teams = result.get("teams") or []
     if len(teams) < 2:
         return None
+    
+    out = {}
     radiant_nw = 0
-    radiant_players = 0
     dire_nw = 0
-    dire_players = 0
-    for player in (teams[0].get("players") or []):
-        nw = player.get("net_worth")
-        if isinstance(nw, (int, float)):
-            radiant_nw += nw
-            radiant_players += 1
-    for player in (teams[1].get("players") or []):
-        nw = player.get("net_worth")
-        if isinstance(nw, (int, float)):
-            dire_nw += nw
-            dire_players += 1
-    if radiant_players == 0 and dire_players == 0:
-        return None
-    return {
+    radiant_dead = 0
+    dire_dead = 0
+    radiant_cores_dead = 0
+    dire_cores_dead = 0
+    max_respawn = 0
+
+    # Teams: 0=Radiant, 1=Dire
+    for side_idx, side_name in [(0, "radiant"), (1, "dire")]:
+        players = teams[side_idx].get("players") or []
+        for p_idx, player in enumerate(players):
+            nw = player.get("net_worth") or 0
+            out[f"{side_name}_p{p_idx+1}_net_worth"] = nw
+            if side_name == "radiant": radiant_nw += nw
+            else: dire_nw += nw
+            
+            # Death status
+            respawn_timer = player.get("respawn_timer") or 0
+            if respawn_timer > 0:
+                if side_name == "radiant": radiant_dead += 1
+                else: dire_dead += 1
+                
+                # Assume players 1-3 are cores for heuristic (simplified)
+                if p_idx < 3:
+                    if side_name == "radiant": radiant_cores_dead += 1
+                    else: dire_cores_dead += 1
+                
+                if respawn_timer > max_respawn:
+                    max_respawn = respawn_timer
+
+    out.update({
         "realtime_radiant_nw": radiant_nw,
         "realtime_dire_nw": dire_nw,
-        "realtime_radiant_players": radiant_players,
-        "realtime_dire_players": dire_players,
         "realtime_lead_nw": radiant_nw - dire_nw,
-    }
+        "radiant_net_worth": radiant_nw,
+        "dire_net_worth": dire_nw,
+        "radiant_dead_count": radiant_dead,
+        "dire_dead_count": dire_dead,
+        "radiant_core_dead_count": radiant_cores_dead,
+        "dire_core_dead_count": dire_cores_dead,
+        "max_respawn_timer": max_respawn,
+    })
+    return out
 
 
 async def maybe_enrich_realtime(game: dict, session: Any = None) -> dict:

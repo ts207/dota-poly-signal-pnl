@@ -400,6 +400,8 @@ class EventSignalEngine:
         yes_book: dict | None,
         no_book: dict | None,
         require_primary: bool = True,
+        fair_price_override: float | None = None,
+        fair_source: str | None = None,
     ) -> dict:
         events = [e for e in apply_suppressions(events) if _event_attr(e, "event_type") in ACTIVE_EVENTS]
         if not events:
@@ -494,24 +496,37 @@ class EventSignalEngine:
         if event_favors_yes:
             token_book = yes_book
             token_id = mapping.get("yes_token_id", "")
+            side = "YES"
         else:
             token_book = no_book
             token_id = mapping.get("no_token_id", "")
+            side = "NO"
+
+        primary_event_type = _event_attr(events[0], "event_type")
+        event_quality = _event_quality_score(events)
+        base_metadata = {
+            "event_type": primary_event_type,
+            "event_tier": event_tier(primary_event_type),
+            "event_is_primary": event_is_primary(primary_event_type),
+            "event_family": event_family(primary_event_type),
+            "event_quality": event_quality,
+            "event_direction": event_direction,
+            "token_id": token_id,
+            "side": side,
+        }
 
         if not token_book or token_book.get("best_ask") is None:
-            return {"decision": "skip", "reason": "missing_book"}
+            return {"decision": "skip", "reason": "missing_book", **base_metadata}
 
         book_age = age_ms(token_book.get("received_at_ns"))
         if book_age > MAX_BOOK_AGE_MS:
-            return {"decision": "skip", "reason": "book_stale", "book_age_ms": book_age}
+            return {"decision": "skip", "reason": "book_stale", "book_age_ms": book_age, **base_metadata}
 
         ask = float(token_book["best_ask"])
         bid = token_book.get("best_bid")
         mid = (ask + float(bid)) / 2.0 if bid is not None else ask
         spread = (ask - float(bid)) if bid is not None else None
         ask_size = token_book.get("ask_size")
-        primary_event_type = _event_attr(events[0], "event_type")
-        event_quality = _event_quality_score(events)
         execution_scores = _execution_quality_scores(book_age, spread, ask, ask_size)
 
         if ask < MIN_FILL_PRICE:
@@ -610,10 +625,16 @@ class EventSignalEngine:
 
         market_move = current_price - anchor_price
         fair_price = apply_probability_move(anchor_price, expected_move)
+        if fair_price_override is not None:
+            try:
+                fair_price = _clip_probability(float(fair_price_override))
+                expected_move = fair_price - anchor_price
+            except (TypeError, ValueError):
+                fair_price_override = None
         executable_price = min(ask + PAPER_SLIPPAGE_CENTS, 0.99)
         remaining_move = fair_price - current_price
 
-        if market_type == "MATCH_WINNER":
+        if market_type == "MATCH_WINNER" and fair_price_override is None:
             series_score_yes = game.get("series_score_yes")
             series_score_no = game.get("series_score_no")
             current_game_number = game.get("current_game_number") or game.get("game_number_in_series")
@@ -648,6 +669,7 @@ class EventSignalEngine:
         if executable_edge < required_edge:
             return {
                 "decision": "skip", "reason": "edge_too_small",
+                **base_metadata,
                 "lag": round(lag, 4), "expected_move": round(expected_move, 4),
                 "fair_price": round(fair_price, 4),
                 "executable_price": round(executable_price, 4),
@@ -656,11 +678,13 @@ class EventSignalEngine:
                 "remaining_move": round(remaining_move, 4),
                 "market_move_recent": round(market_move, 4),
                 "net_edge": round(executable_edge, 4),
+                "fair_source": fair_source or ("override" if fair_price_override is not None else "event_model"),
             }
 
         if remaining_move < MIN_LAG:
             return {
                 "decision": "skip", "reason": "lag_too_small",
+                **base_metadata,
                 "lag": round(lag, 4), "expected_move": round(expected_move, 4),
                 "fair_price": round(fair_price, 4),
                 "executable_price": round(executable_price, 4),
@@ -669,6 +693,7 @@ class EventSignalEngine:
                 "remaining_move": round(remaining_move, 4),
                 "market_move_recent": round(market_move, 4),
                 "net_edge": round(executable_edge, 4),
+                "fair_source": fair_source or ("override" if fair_price_override is not None else "event_model"),
             }
 
         recent_price = self._price_n_seconds_ago(token_id, 3)
@@ -738,6 +763,7 @@ class EventSignalEngine:
             "size_multiplier": round(size_multiplier, 2),
             "phase_mult": time_multiplier(game_time),
             "event_kill_lead": event_kill_lead,
+            "fair_source": fair_source or ("override" if fair_price_override is not None else "event_model"),
             "severity": "+".join([s for s in severities if s]),
             "game_time_sec": game_time,
             "steam_age_ms": steam_age,

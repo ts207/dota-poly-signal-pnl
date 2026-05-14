@@ -34,72 +34,22 @@ from dota_fair_model.inference import FairModelBundle, load_bundle
 from dota_fair_model.features import DEFAULT_FEATURE_COLUMNS, build_feature_row
 from dota_fair_model.schemas import phase_for_duration
 from event_detector import EventDetector
-from signal_engine import ACTIVE_EVENTS
-from config import EVENT_LEAD_SWING_30S, EVENT_LEAD_SWING_60S, DOTA_FAIR_MODEL_PATH
+from signal_engine import ACTIVE_EVENTS, apply_probability_move
+from config import (
+    EVENT_LEAD_SWING_30S,
+    EVENT_LEAD_SWING_60S,
+    DOTA_FAIR_MODEL_PATH,
+    PRICE_LOOKBACK_SEC,
+    MAX_SPREAD,
+    MIN_ASK_SIZE_USD,
+    MIN_EXECUTABLE_EDGE,
+    PAPER_SLIPPAGE_CENTS,
+)
+from backtest import SEGMENTS
 
 from hybrid_nowcast import compute_hybrid_nowcast
 
-DATA_DIR = "/home/irene/dota_poly_bot_final/data"
 PAPER_SIZE_USD = 25.0
-
-SEGMENTS = [
-    {
-        "label": "Carstensz vs TEAM GRIND",
-        "db": f"{DATA_DIR}/dota_poly_collection.sqlite",
-        "match_key": "90285607589477394",
-        "radiant_token": "90268231449155282246853972144583742931465600097997027484803301961579288855144",
-        "dire_token":    "63987300715693577866871042327158392402412511432457971527449850967203600386804",
-        "radiant_win": 0,
-    },
-    {
-        "label": "PlayTime vs 1w Team",
-        "db": f"{DATA_DIR}/dota_poly_collection.sqlite",
-        "match_key": "90285599503423511_m1",
-        "radiant_token": "13478386926402301406532136263977204904714000287949507563856704721767290839044",
-        "dire_token":    "63310461820786146813035795297817607012343337186334700939384155278400607390107",
-        "radiant_win": 0,
-    },
-    {
-        "label": "Two Move vs Team Lynx",
-        "db": f"{DATA_DIR}/lynx_tm6_collection.sqlite",
-        "match_key": "90285619707346954_m1",
-        "radiant_token": "34976881449444734178409311723175251004867357634324791603190926689290262342977",
-        "dire_token":    "4452564105200725346521605963781468915677428239106200674543104246242028910211",
-        "radiant_win": 0,
-    },
-    {
-        "label": "1w Team vs PlayTime (G2)",
-        "db": f"{DATA_DIR}/1win_ptime_g2.sqlite",
-        "match_key": "90285618797931526_m1",
-        "radiant_token": "44042712276170069650224504201935395716816628269726746518447030840697274440699",
-        "dire_token":    "33812820765629339713713753007847781463087366023932766960858881005889078629256",
-        "radiant_win": 1,
-    },
-    {
-        "label": "PARIVISION vs 1w Team (G1)",
-        "db": f"{DATA_DIR}/1win_pari_g1.sqlite",
-        "match_key": "90285623272207384_m1",
-        "radiant_token": "70347395524393779469493680391299369304316720284512794724445180423011761114165",
-        "dire_token":    "74998310881290739392918170902879306286233744638879268738919090905932120366324",
-        "radiant_win": 1,
-    },
-    {
-        "label": "1w vs PARIVISION (G2)",
-        "db": f"{DATA_DIR}/1win_pari_g2.sqlite",
-        "match_key": "90285627567738905_m1",
-        "radiant_token": "47625441297314461057077645727754264216244555280948560109804310553137263770263",
-        "dire_token":    "57026843702394568915654659851749981463087366023932051302086816685884289545931",  
-        "radiant_win": 0,
-    },
-    {
-        "label": "PARIVISION vs 1w Team (G3)",
-        "db": f"{DATA_DIR}/1win_pari_g3.sqlite",
-        "match_key": "90285630522125338_m1",
-        "radiant_token": "39003960489463622267960758033997733112117778420142043276598674855608515962197",
-        "dire_token":    "14082266884467670274043702622681498600675941864859148613356376458056888253905",
-        "radiant_win": 1,
-    },
-]
 
 EVENT_EXPECTED_MOVE = {name: spec.base for name, spec in ACTIVE_EVENTS.items()}
 _HIGH_SEVERITY_ONLY = frozenset({"LEAD_SWING_30S", "LEAD_SWING_60S"})
@@ -142,9 +92,12 @@ class MLTrade:
 
 
 def _load_dota(db: sqlite3.Connection, match_key: str, start_ms: int, end_ms: int) -> list[dict]:
+    cols = {row[1] for row in db.execute("PRAGMA table_info(dota_ticks)").fetchall()}
+    building_expr = "building_state" if "building_state" in cols else "NULL"
+    tower_expr = "tower_state" if "tower_state" in cols else "NULL"
     rows = db.execute(
-        """SELECT ts_ms, game_time, radiant_score, dire_score, nw_diff,
-                  radiant_team, dire_team, radiant_nw, dire_nw
+        f"""SELECT ts_ms, game_time, radiant_score, dire_score, nw_diff,
+                  radiant_team, dire_team, radiant_nw, dire_nw, {building_expr}, {tower_expr}
            FROM dota_ticks
            WHERE match_key=? AND ts_ms BETWEEN ? AND ?
            ORDER BY ts_ms""",
@@ -153,7 +106,7 @@ def _load_dota(db: sqlite3.Connection, match_key: str, start_ms: int, end_ms: in
     seen: set[int] = set()
     out = []
     for row in rows:
-        ts_ms, game_time, r_score, d_score, nw_diff, r_team, d_team, r_nw, d_nw = row
+        ts_ms, game_time, r_score, d_score, nw_diff, r_team, d_team, r_nw, d_nw, building_state, tower_state = row
         gt = int(game_time or 0)
         if gt in seen:
             continue
@@ -168,6 +121,9 @@ def _load_dota(db: sqlite3.Connection, match_key: str, start_ms: int, end_ms: in
             "dire_team": d_team,
             "radiant_net_worth": int(r_nw) if r_nw is not None else None,
             "dire_net_worth": int(d_nw) if d_nw is not None else None,
+            "realtime_lead_nw": (int(r_nw) - int(d_nw)) if r_nw is not None and d_nw is not None else None,
+            "building_state": int(building_state) if building_state is not None else None,
+            "tower_state": int(tower_state) if tower_state is not None else None,
             "match_id": match_key,
         })
     return out
@@ -175,13 +131,23 @@ def _load_dota(db: sqlite3.Connection, match_key: str, start_ms: int, end_ms: in
 
 def _load_market(db: sqlite3.Connection, token_id: str, start_ms: int, end_ms: int) -> list[dict]:
     rows = db.execute(
-        """SELECT ts_ms, best_bid, best_ask, mid
+        """SELECT ts_ms, best_bid, best_ask, mid, spread, ask_depth
            FROM market_ticks
            WHERE token_id=? AND ts_ms BETWEEN ? AND ?
            ORDER BY ts_ms""",
         (token_id, start_ms, end_ms),
     ).fetchall()
-    return [{"ts_ms": r[0], "best_bid": r[1], "best_ask": r[2], "mid": r[3]} for r in rows]
+    return [
+        {
+            "ts_ms": r[0],
+            "best_bid": r[1],
+            "best_ask": r[2],
+            "mid": r[3],
+            "spread": r[4],
+            "ask_depth": r[5],
+        }
+        for r in rows
+    ]
 
 
 def _nearest_before(ticks: list[dict], ts_ms: int) -> dict | None:
@@ -203,6 +169,37 @@ def _mid_at(ticks: list[dict], ts_ms: int) -> float | None:
 def _ask_at(ticks: list[dict], ts_ms: int) -> float | None:
     t = _nearest_before(ticks, ts_ms)
     return t["best_ask"] if t else None
+
+
+def _bid_at(ticks: list[dict], ts_ms: int) -> float | None:
+    t = _nearest_before(ticks, ts_ms)
+    return t["best_bid"] if t else None
+
+
+def _snapshot_at(snaps: list[dict], ts_ms: int) -> dict | None:
+    return _nearest_before(snaps, ts_ms)
+
+
+def _execution_filter_reason(tick: dict | None, *, max_spread: float, min_ask_usd: float) -> str | None:
+    if not tick or tick.get("best_ask") is None:
+        return "missing_ask"
+    ask = float(tick["best_ask"])
+    bid = tick.get("best_bid")
+    if bid is None:
+        return "missing_bid"
+    spread = tick.get("spread")
+    if spread is None:
+        spread = ask - float(bid)
+    if spread is not None and float(spread) > max_spread:
+        return "spread_too_wide"
+    ask_depth = tick.get("ask_depth")
+    if ask_depth is not None and ask * float(ask_depth) < min_ask_usd:
+        return "insufficient_ask_depth"
+    return None
+
+
+def _passes_execution_filters(tick: dict | None, *, max_spread: float, min_ask_usd: float) -> bool:
+    return _execution_filter_reason(tick, max_spread=max_spread, min_ask_usd=min_ask_usd) is None
 
 
 def _clip(p: float) -> float:
@@ -278,7 +275,18 @@ def _hybrid_fair(ml_fair: float | None, heuristic_move: float, anchor_price: flo
     return result.hybrid_fair
 
 
-def run_backtest_ml(min_lag: float, size_usd: float, exit_sec: int, model_path: str | None = None, ultra_late_only: bool = False) -> list[MLTrade]:
+def run_backtest_ml(
+    min_lag: float,
+    size_usd: float,
+    exit_sec: int,
+    model_path: str | None = None,
+    ultra_late_only: bool = False,
+    lookback_sec: float = PRICE_LOOKBACK_SEC,
+    max_spread: float = MAX_SPREAD,
+    min_ask_usd: float = MIN_ASK_SIZE_USD,
+    min_executable_edge: float = MIN_EXECUTABLE_EDGE,
+    slippage_cents: float = PAPER_SLIPPAGE_CENTS,
+) -> list[MLTrade]:
     bundle = None
     if model_path:
         try:
@@ -376,18 +384,30 @@ def run_backtest_ml(min_lag: float, size_usd: float, exit_sec: int, model_path: 
                     terminal = float(1 - seg["radiant_win"])
                     side = "BUY_DIRE"
 
-                price_at_event = _mid_at(token_ticks, ts)
+                event_tick = _nearest_before(token_ticks, ts)
+                if not _passes_execution_filters(event_tick, max_spread=max_spread, min_ask_usd=min_ask_usd):
+                    continue
+
+                price_at_event = event_tick["mid"]
                 if price_at_event is None:
                     continue
 
-                actual_move = price_at_event - pre_game_price
-                heuristic_lag = expected_move - actual_move
+                anchor_price = _mid_at(token_ticks, ts - int(lookback_sec * 1000))
+                if anchor_price is None:
+                    anchor_price = pre_game_price
+
+                actual_move = price_at_event - anchor_price
+                heuristic_fair = apply_probability_move(anchor_price, expected_move)
+                heuristic_lag = heuristic_fair - price_at_event
 
                 if heuristic_lag < min_lag:
                     continue
 
-                ask = _ask_at(token_ticks, ts)
+                ask = event_tick["best_ask"]
                 if ask is None:
+                    continue
+                executable_price = min(float(ask) + slippage_cents, 0.99)
+                if heuristic_fair - executable_price < min_executable_edge:
                     continue
 
                 ml_fair_yes, ml_phase = _ml_fair_for_snapshot(bundle, snap, direction)
@@ -395,12 +415,22 @@ def run_backtest_ml(min_lag: float, size_usd: float, exit_sec: int, model_path: 
 
                 hybrid_fair = None
                 if ml_fair_yes is not None:
-                    heuristic_anchor_price = price_at_event
-                    heuristic_fair = _clip(heuristic_anchor_price + expected_move)
-                    ml_fair_clipped = _clip(ml_fair_yes)
-                    event_shock = expected_move
-                    hybrid_fair_logit = _logit(ml_fair_clipped) + event_shock * 4.0 * 0.25
-                    hybrid_fair = _clip(_sigmoid(hybrid_fair_logit))
+                    event_dicts = [{
+                        "event_type": evt.event_type,
+                        "event_confidence": 0.5, # Heuristic
+                        "fight_pressure_score": 0.0,
+                        "economic_pressure_score": 0.0,
+                    }]
+                    nowcast = compute_hybrid_nowcast(
+                        latest_liveleague_features=None,
+                        latest_toplive_snapshot=snap,
+                        toplive_event_cluster=event_dicts,
+                        source_delay_metrics={"game_time_lag_sec": 0}, # In backtest, assume sync
+                        slow_model_fair=ml_fair_yes,
+                        event_only_fair=heuristic_fair,
+                        game_time_sec=game_time,
+                    )
+                    hybrid_fair = nowcast.hybrid_fair
 
                 ml_edge = (_clip(ml_fair_yes) - ask) if ml_fair_yes is not None else None
                 hybrid_edge = (hybrid_fair - ask) if hybrid_fair is not None else None
@@ -414,7 +444,7 @@ def run_backtest_ml(min_lag: float, size_usd: float, exit_sec: int, model_path: 
                     wall_ts_ms=ts,
                     side=side,
                     fill=ask,
-                    pre_game_price=pre_game_price,
+                    pre_game_price=anchor_price,
                     price_at_event=price_at_event,
                     heuristic_expected_move=round(expected_move, 4),
                     heuristic_lag=round(heuristic_lag, 4),
@@ -430,7 +460,7 @@ def run_backtest_ml(min_lag: float, size_usd: float, exit_sec: int, model_path: 
 
                 exit_ms = ts + exit_sec * 1000
                 for horizon_ms, pnl_attr in [(15_000, "pnl_15s"), (30_000, "pnl_30s"), (60_000, "pnl_60s")]:
-                    fp = _mid_at(token_ticks, ts + horizon_ms)
+                    fp = _bid_at(token_ticks, ts + horizon_ms)
                     if fp is not None:
                         setattr(trade, pnl_attr, (fp - ask) * size_usd)
 
@@ -441,15 +471,15 @@ def run_backtest_ml(min_lag: float, size_usd: float, exit_sec: int, model_path: 
                     (30_000, "pnl_ml_30s", "ml_fair_yes"),
                     (60_000, "pnl_ml_60s", "ml_fair_yes"),
                 ]:
-                    fp = _mid_at(token_ticks, ts + horizon_ms)
-                    if fp is not None and ml_fair_yes is not None:
-                        ml_at_exit = _ml_fair_for_snapshot(bundle, snap, direction)[0]
+                    future_snap = _snapshot_at(dota_snaps, ts + horizon_ms)
+                    if future_snap is not None and ml_fair_yes is not None:
+                        ml_at_exit = _ml_fair_for_snapshot(bundle, future_snap, direction)[0]
                         if ml_at_exit is not None:
                             setattr(trade, pnl_attr, (_clip(ml_at_exit) - _clip(ml_fair_yes)) * size_usd)
 
                 if hybrid_fair is not None:
                     for horizon_ms, pnl_attr in [(15_000, "pnl_hybrid_15s"), (30_000, "pnl_hybrid_30s"), (60_000, "pnl_hybrid_60s")]:
-                        fp = _mid_at(token_ticks, ts + horizon_ms)
+                        fp = _bid_at(token_ticks, ts + horizon_ms)
                         if fp is not None:
                             setattr(trade, pnl_attr, (fp - ask) * size_usd)
                     trade.pnl_hybrid_term = (terminal - ask) * size_usd
@@ -490,7 +520,7 @@ def print_results(trades: list[MLTrade], min_lag: float, size_usd: float, exit_s
         )
 
     print("\n" + "=" * 120)
-    print("AGGREGATE PnL COMPARISON (heuristic entry at ask, hold to horizon)")
+    print("AGGREGATE PnL COMPARISON (ask entry, bid-marked horizon exit)")
     print("=" * 120)
 
     def _pnl_stats(key: str):
@@ -530,16 +560,15 @@ def print_results(trades: list[MLTrade], min_lag: float, size_usd: float, exit_s
         if t.ml_fair_yes is not None:
             ml_total += 1
             ml_direction = t.ml_fair_yes > t.price_at_event
-            ml_correct += int(ml_direction == actual_direction_correct or (ml_direction and t.direction == "radiant") or (not ml_direction and t.direction == "dire"))
+            ml_correct += int(ml_direction == actual_direction_correct)
 
         if t.hybrid_fair is not None:
             hybrid_total += 1
             hybrid_direction_correct_for_this_side = t.hybrid_fair > t.fill
-            hybrid_total_events = hybrid_total
             hybrid_correct += int(hybrid_direction_correct_for_this_side == actual_direction_correct)
 
     print(f"  Heuristic: {heuristic_correct}/{heuristic_total} direction-correct")
-    print(f"  ML model:  {ml_correct}/{ml_total} model-agrees-with-event-direction" if ml_total > 0 else "  ML model:  no predictions")
+    print(f"  ML model:  {ml_correct}/{ml_total} edge-direction-correct" if ml_total > 0 else "  ML model:  no predictions")
     print(f"  Hybrid:    {hybrid_correct}/{hybrid_total} direction-correct" if hybrid_total > 0 else "  Hybrid:    no predictions")
 
     print("\n" + "=" * 120)
@@ -619,8 +648,9 @@ def print_results(trades: list[MLTrade], min_lag: float, size_usd: float, exit_s
     for label, ts in sorted(by_game.items()):
         terms = [t.pnl_term for t in ts if t.pnl_term is not None]
         h15 = [t.pnl_15s for t in ts if t.pnl_15s is not None]
+        ml_fairs = [t.ml_fair_yes for t in ts if t.ml_fair_yes is not None]
         correct = sum(1 for t in ts if (t.direction == "radiant") == (t.radiant_win == 1))
-        ml_avg = sum(t.ml_edge for t in ts if t.ml_edge is not None) / max(len([t for t in ts if t.ml_edge is not None]), 1)
+        ml_avg = sum(t.ml_edge for t in ts if t.ml_edge is not None) / max(len(ml_fairs), 1)
         ml_avg_str = f"{ml_avg:+.4f}" if ml_fairs else "n/a"
         print(f"  {label:>30}: n={len(ts)}  correct_dir={correct}/{len(ts)}  "
               f"15s_avg={sum(h15)/len(h15) if h15 else 0:+.2f}  "
@@ -640,11 +670,21 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default=DOTA_FAIR_MODEL_PATH, help="Path to dota_fair.joblib model bundle")
     parser.add_argument("--ultra-late-only", action="store_true", help="Only analyze 50min+ game events")
     parser.add_argument("--no-model", action="store_true", help="Skip ML model loading (heuristic-only comparison)")
+    parser.add_argument("--lookback", type=float, default=PRICE_LOOKBACK_SEC, help="Recent price lookback in seconds")
+    parser.add_argument("--max-spread", type=float, default=MAX_SPREAD)
+    parser.add_argument("--min-ask-usd", type=float, default=MIN_ASK_SIZE_USD)
+    parser.add_argument("--min-exec-edge", type=float, default=MIN_EXECUTABLE_EDGE)
+    parser.add_argument("--slippage", type=float, default=PAPER_SLIPPAGE_CENTS)
     args = parser.parse_args()
 
     model_path = None if args.no_model else args.model
     trades = run_backtest_ml(
         min_lag=args.lag, size_usd=args.size, exit_sec=args.exit,
         model_path=model_path, ultra_late_only=args.ultra_late_only,
+        lookback_sec=args.lookback,
+        max_spread=args.max_spread,
+        min_ask_usd=args.min_ask_usd,
+        min_executable_edge=args.min_exec_edge,
+        slippage_cents=args.slippage,
     )
     print_results(trades, min_lag=args.lag, size_usd=args.size, exit_sec=args.exit, ultra_late_only=args.ultra_late_only)

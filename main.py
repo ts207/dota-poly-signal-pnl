@@ -5,6 +5,7 @@ import traceback
 import aiohttp
 import time
 import os
+import json
 
 from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
@@ -17,14 +18,17 @@ from live_executor import LiveExecutor
 from liveleague_features import LiveLeagueContextCache, classify_liveleague_lag
 from mapping_validator import validate_mapping_identity
 from hybrid_nowcast import compute_hybrid_nowcast
+from realtime_enrichment import maybe_enrich_realtime
 from book_refresh import fetch_fresh_book
 from event_taxonomy import event_tier, TIER_A_EVENTS, TIER_B_EVENTS
 from series_model import compute_bo3_match_p
+from team_utils import norm_team
 from config import (
     STEAM_API_KEY, STEAM_POLL_SECONDS, PAPER_EXECUTION_DELAY_MS, LIVE_TRADING,
     ALLOW_CONFIRMATION_ONLY_LIVE_TRADES, MAX_BOOK_AGE_MS, MIN_EXECUTABLE_EDGE,
     MIN_LAG, MAX_SPREAD, MIN_ASK_SIZE_USD, PAPER_SLIPPAGE_CENTS, PAPER_TRADE_SIZE_USD,
-    PRICE_LOOKBACK_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS, DOTA_FAIR_MODEL_PATH
+    PRICE_LOOKBACK_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS, DOTA_FAIR_MODEL_PATH,
+    MIN_ML_EDGE, ML_STRATEGY_ENABLED
 )
 from sync_markets import sync_markets_to_games, load_markets, write_markets
 from dota_fair_model.inference import load_bundle
@@ -71,6 +75,23 @@ def _book_mid(book: dict | None) -> float | None:
             return float(bid)
     except (TypeError, ValueError):
         return None
+    return None
+
+
+def _yes_fair_from_radiant(mapping: dict, game: dict, p_rad: float) -> tuple[float, str] | None:
+    side_map = mapping.get("steam_side_mapping")
+    if side_map == "normal":
+        return p_rad, "radiant"
+    if side_map == "reversed":
+        return 1.0 - p_rad, "dire"
+
+    yes_team = norm_team(mapping.get("yes_team"))
+    radiant_team = norm_team(game.get("radiant_team"))
+    dire_team = norm_team(game.get("dire_team"))
+    if yes_team and radiant_team and yes_team == radiant_team:
+        return p_rad, "radiant"
+    if yes_team and dire_team and yes_team == dire_team:
+        return 1.0 - p_rad, "dire"
     return None
 
 
@@ -128,6 +149,17 @@ async def steam_loop(
     last_mapping_refresh = 0.0
     league_cache = LeagueGameCache()
     max_game_times: dict[str, int] = {}  # match_id -> max game_time_sec seen
+
+    # Load team win stats for ML features
+    team_stats = {}
+    stats_path = "dota_fair_model/models/team_stats.json"
+    if os.path.exists(stats_path):
+        try:
+            with open(stats_path, "r") as f:
+                team_stats = json.load(f)
+            print(f"Loaded {len(team_stats)} team win ratios from {stats_path}")
+        except Exception as e:
+            print(f"Failed to load team stats: {e}")
 
     async with aiohttp.ClientSession() as session:
         while True:
@@ -207,6 +239,11 @@ async def steam_loop(
                     # Attach LiveLeague context as metadata (non-blocking,
                     # never changes expected_move/edge/sizing)
                     llg_cache.attach_to_game(game, feature_logger=llg_feature_logger)
+
+                    # Enrich with Realtime Stats as the base (120s delayed)
+                    # This provides the high-fidelity features (per-player NW, dead counts)
+                    # that GetTopLiveGame (0s delayed) lacks.
+                    await maybe_enrich_realtime(game, session)
 
                     # Validate mapping identity against LLG context immediately
                     for mapping in mappings:
@@ -372,12 +409,38 @@ async def steam_loop(
                                     slow_model_fair=slow_model_fair,
                                     event_only_fair=signal.get("fair_price"),
                                 )
-                                signal.update(nowcast.to_dict())
+                                nowcast_data = nowcast.to_dict()
+                                signal.update(nowcast_data)
                                 signal["mapping_confidence"] = game.get("mapping_confidence")
                                 signal["mapping_errors"] = game.get("mapping_errors")
                                 signal["team_id_match"] = game.get("team_id_match")
                                 signal["market_game_number_match"] = game.get("market_game_number_match")
                                 signal["duplicate_match_id_error"] = game.get("duplicate_match_id_error")
+
+                                if nowcast.hybrid_fair is not None:
+                                    hybrid_signal = signal_engine.evaluate_cluster(
+                                        events=cluster_events,
+                                        game=game,
+                                        mapping=mapping,
+                                        yes_book=yes_book,
+                                        no_book=no_book,
+                                        require_primary=not (LIVE_TRADING and ALLOW_CONFIRMATION_ONLY_LIVE_TRADES),
+                                        fair_price_override=nowcast.hybrid_fair,
+                                        fair_source="hybrid",
+                                    )
+                                    for key in (
+                                        "liveleague_context_status", "liveleague_age_ms", "game_time_lag_sec",
+                                        "aegis_team", "radiant_dead_count", "dire_dead_count",
+                                        "radiant_core_dead_count", "dire_core_dead_count",
+                                        "radiant_max_respawn", "dire_max_respawn",
+                                        "radiant_top3_nw", "dire_top3_nw", "liveleague_derived_events",
+                                        "mapping_confidence", "mapping_errors", "team_id_match",
+                                        "market_game_number_match", "duplicate_match_id_error",
+                                    ):
+                                        if key in signal:
+                                            hybrid_signal[key] = signal[key]
+                                    hybrid_signal.update(nowcast_data)
+                                    signal = hybrid_signal
 
                                 if signal.get("reason") == "no_primary_event":
                                     shadow_signal = signal_engine.evaluate_cluster(
@@ -395,14 +458,14 @@ async def steam_loop(
                                         signal = shadow_signal
 
                                 # ── Stale-book rescue for Tier A/B events ──
-                                # When a Tier A/B signal is blocked by book_stale,
+                                # When a Tier A/B signal is blocked by a stale/missing local book,
                                 # fetch a fresh orderbook via REST and re-evaluate.
                                 _rescue_tok_id = signal.get("token_id", "")
                                 _rescue_skip = signal.get("reason", "")
                                 _rescue_evt = signal.get("event_type") or ""
                                 _rescue_tier = signal.get("event_tier") or ""
                                 if (
-                                    _rescue_skip == "book_stale"
+                                    _rescue_skip in {"book_stale", "missing_book"}
                                     and _rescue_evt in (TIER_A_EVENTS | TIER_B_EVENTS)
                                     and http_session is not None
                                     and _rescue_tok_id
@@ -438,6 +501,14 @@ async def steam_loop(
                                         _fresh_book = None
 
                                     if _fresh_book and _fresh_book.get("best_ask") is not None:
+                                        _stored_fresh_book = book_store.update_direct(
+                                            _rescue_tok_id,
+                                            best_bid=_fresh_book.get("best_bid"),
+                                            best_ask=_fresh_book.get("best_ask"),
+                                            bid_size=_fresh_book.get("bid_size"),
+                                            ask_size=_fresh_book.get("ask_size"),
+                                            raw=_fresh_book.get("raw"),
+                                        )
                                         _rescue_row["refresh_request_start_ns"] = _fresh_book.get("refresh_latency_ns")
                                         _rescue_row["refresh_response_ns"] = _fresh_book.get("received_at_ns")
                                         _rescue_row["refresh_latency_ms"] = round(_fresh_book.get("refresh_latency_ns", 0) / 1_000_000, 1)
@@ -463,14 +534,14 @@ async def steam_loop(
                                         _fresh_side = signal.get("side", "")
                                         if _fresh_side == "YES":
                                             if _rescue_tok_id == mapping.get("yes_token_id"):
-                                                _fresh_yes_book = _fresh_book
+                                                _fresh_yes_book = _stored_fresh_book
                                             else:
-                                                _fresh_no_book = _fresh_book
+                                                _fresh_no_book = _stored_fresh_book
                                         else:
                                             if _rescue_tok_id == mapping.get("no_token_id"):
-                                                _fresh_no_book = _fresh_book
+                                                _fresh_no_book = _stored_fresh_book
                                             else:
-                                                _fresh_yes_book = _fresh_book
+                                                _fresh_yes_book = _stored_fresh_book
 
                                         _fresh_signal = signal_engine.evaluate_cluster(
                                             events=cluster_events,
@@ -479,17 +550,37 @@ async def steam_loop(
                                             yes_book=_fresh_yes_book,
                                             no_book=_fresh_no_book,
                                             require_primary=not (LIVE_TRADING and ALLOW_CONFIRMATION_ONLY_LIVE_TRADES),
+                                            fair_price_override=signal.get("hybrid_fair"),
+                                            fair_source="hybrid_rescue" if signal.get("hybrid_fair") is not None else None,
                                         )
+                                        _fresh_signal.update(nowcast_data)
+                                        for key in (
+                                            "liveleague_context_status", "liveleague_age_ms", "game_time_lag_sec",
+                                            "aegis_team", "radiant_dead_count", "dire_dead_count",
+                                            "radiant_core_dead_count", "dire_core_dead_count",
+                                            "radiant_max_respawn", "dire_max_respawn",
+                                            "radiant_top3_nw", "dire_top3_nw", "liveleague_derived_events",
+                                            "mapping_confidence", "mapping_errors", "team_id_match",
+                                            "market_game_number_match", "duplicate_match_id_error",
+                                        ):
+                                            if key in signal:
+                                                _fresh_signal[key] = signal[key]
                                         _rescue_row["fresh_executable_edge"] = _fresh_signal.get("executable_edge")
                                         _rescue_row["fresh_remaining_move"] = _fresh_signal.get("remaining_move")
                                         _rescue_row["fresh_decision"] = _fresh_signal.get("decision")
                                         _rescue_row["fresh_skip_reason"] = _fresh_signal.get("reason")
+                                        _rescue_row["fresh_fair_source"] = _fresh_signal.get("fair_source")
+                                        _rescue_row["fresh_hybrid_fair"] = _fresh_signal.get("hybrid_fair")
 
                                         # Markouts are sampled asynchronously after logging the rescue row.
                                         # A background task will fill them in later.
                                         _rescue_row["markout_3s"] = None
                                         _rescue_row["markout_10s"] = None
                                         _rescue_row["markout_30s"] = None
+                                        if _fresh_signal.get("decision") == "paper_buy_yes":
+                                            signal = _fresh_signal
+                                            yes_book = _fresh_yes_book
+                                            no_book = _fresh_no_book
                                     else:
                                         _rescue_row["refresh_latency_ms"] = None
                                         _rescue_row["fresh_bid"] = None
@@ -549,6 +640,7 @@ async def steam_loop(
                                     "executable_price": signal.get("executable_price"),
                                     "executable_edge": signal.get("executable_edge"),
                                     "remaining_move": signal.get("remaining_move"),
+                                    "fair_source": signal.get("fair_source"),
                                     "required_edge": signal.get("required_edge"),
                                     "lag": signal.get("lag"),
                                     "mapping_confidence": game.get("mapping_confidence"),
@@ -778,6 +870,108 @@ async def steam_loop(
                                         )
                                     else:
                                         print(f"SKIP ENTRY: {reason}")
+
+                # 2. Tick-level ML valuation arbitrage (always-on)
+                if ML_STRATEGY_ENABLED and model_bundle:
+                    for game in active_games:
+                        # Skip if we already just processed events for this match in this poll
+                        # (The hybrid nowcast already incorporated the ML fair for those)
+                        # Actually, running ML check every tick is safer to catch gradual drifts.
+                        
+                        match_id = str(game.get("match_id") or "")
+                        game_time = game.get("game_time_sec") or 0
+                        if game_time < 300: # 5m guard
+                            continue
+                            
+                        # Inject team win ratios from historical stats
+                        r_id = str(game.get("radiant_team_id") or "")
+                        d_id = str(game.get("dire_team_id") or "")
+                        game["radiant_team_win_ratio"] = team_stats.get(r_id, 0.5)
+                        game["dire_team_win_ratio"] = team_stats.get(d_id, 0.5)
+                        
+                        for mapping in mappings:
+                            if str(mapping["dota_match_id"]) not in {match_id, str(game.get("lobby_id") or "")}:
+                                continue
+                            
+                            yes_tok = mapping["yes_token_id"]
+                            no_tok = mapping["no_token_id"]
+                                
+                            try:
+                                feat_row = build_feature_row(game)
+                                pred = model_bundle.predict_radiant(feat_row)
+                                p_rad = pred.get("radiant_fair_probability")
+                                if p_rad is None: continue
+                                
+                                yes_book = book_store.get(yes_tok)
+                                if not yes_book or not yes_book.get("best_ask"): continue
+                                yes_bid = yes_book.get("best_bid")
+                                if yes_bid is None:
+                                    continue
+                                
+                                yes_fair_direction = _yes_fair_from_radiant(mapping, game, p_rad)
+                                if yes_fair_direction is None:
+                                    continue
+                                yes_fair, yes_direction = yes_fair_direction
+                                trader.update_fair_value(yes_tok, yes_fair)
+                                trader.update_fair_value(no_tok, 1.0 - yes_fair)
+
+                                # Only enter if we don't already have an open position in this market.
+                                # Existing positions use the refreshed fair value in check_exits().
+                                if yes_tok in trader.positions or no_tok in trader.positions:
+                                    continue
+
+                                # Evaluate the market YES token using the mapped Steam side.
+                                mkt_price = float(yes_book["best_ask"])
+                                spread = mkt_price - float(yes_bid)
+                                ask_size = yes_book.get("ask_size")
+                                if mkt_price <= 0.05 or mkt_price >= 0.95:
+                                    continue
+                                if spread > MAX_SPREAD:
+                                    continue
+                                if ask_size is not None and mkt_price * float(ask_size) < MIN_ASK_SIZE_USD:
+                                    continue
+
+                                edge = yes_fair - mkt_price
+                                
+                                if edge >= MIN_ML_EDGE:
+                                    signal = {
+                                        "event_type": "ML_ARBITRAGE",
+                                        "event_direction": yes_direction,
+                                        "side": "YES",
+                                        "token_id": yes_tok,
+                                        "fair_price": round(yes_fair, 4),
+                                        "executable_price": mkt_price,
+                                        "executable_edge": round(edge, 4),
+                                        "remaining_move": round(edge, 4),
+                                        "expected_move": round(edge, 4),
+                                        "required_edge": MIN_ML_EDGE,
+                                        "ask": mkt_price,
+                                        "bid": float(yes_bid),
+                                        "spread": round(spread, 4),
+                                        "ask_size": ask_size,
+                                        "decision": "paper_buy_yes",
+                                        "reason": "ml_valuation_edge",
+                                        "severity": "ML",
+                                        "game_time_sec": game_time,
+                                    }
+                                    
+                                    # Reuse paper entry logic
+                                    paper_attempt_ns = time.time_ns()
+                                    pos, reason = trader.enter(
+                                        signal=signal,
+                                        token_id=yes_tok,
+                                        side="YES",
+                                        book_store=book_store,
+                                        match_id=match_id,
+                                        market_name=mapping.get("name"),
+                                        opposing_token_id=no_tok,
+                                    )
+                                    if pos:
+                                        position_logger.log_entry(pos)
+                                        print(f"ML_ENTER {mapping['name']} YES price={pos.entry_price:.4f} edge={edge:.4f}")
+
+                            except Exception as e:
+                                print(f"Tick-level ML error: {e}")
 
             except Exception as e:
                 print("steam_loop error:", repr(e))

@@ -1,0 +1,19 @@
+Fetching GetTopLiveGame...
+
+Target Match: 8810060631 (Server ID: 90285721906184204)
+--- GetTopLiveGame Output ---
+Game Time: 1689s
+Score: 21 - 44
+Radiant Lead: -29150
+Last Update Time (Unix): 1778724500.0
+
+Fetching GetRealtimeStats for 90285721906184204...
+--- GetRealtimeStats Output ---
+Game Time: 1587s
+Score: 19 - 40
+Calculated Radiant Lead: -22862 (R:39590 D:62452)
+Timestamp in Result: None
+
+--- Comparison Summary ---
+Game Time Difference: -102s (Positive means RealtimeStats is ahead)
+Lead Difference: 6288

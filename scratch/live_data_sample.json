@@ -1,0 +1,490 @@
+[
+  {
+    "ts": 1778725562.4910605,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725563.2699687,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725564.198911,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725565.2738347,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725566.271913,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725567.286419,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725568.2715364,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725569.2765427,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725570.2760308,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725571.3751614,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725572.3883493,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725573.3806534,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725574.3223517,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725575.3992057,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725576.293979,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725577.2869194,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725578.352339,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725579.2807903,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725580.3346777,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725581.5395656,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725582.3652186,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725583.3248289,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725584.3444574,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725585.3563745,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725586.3408628,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725587.3553975,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725588.326162,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725589.2887113,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725590.3826082,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725591.328849,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725592.3228357,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725593.3238766,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725593.4443657,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725594.4565337,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725595.5240073,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725596.5616422,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725597.5276475,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725598.477078,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725599.5036354,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725600.5036762,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725601.7247045,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725602.5091345,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725603.4928,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725604.5284064,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725605.4943101,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725606.4969757,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725607.500011,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725608.5835617,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725609.5565298,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725610.4972746,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725611.5062597,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725612.540561,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725613.522363,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -18221,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725614.5164,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725615.5023608,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725616.528912,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725617.575017,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725618.581061,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725619.4975915,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725620.5176392,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  },
+  {
+    "ts": 1778725621.5300975,
+    "match_id": "8810067689",
+    "game_time_sec": null,
+    "toplive_lead": -20986,
+    "realtime_lead": null,
+    "drift": null
+  }
+]

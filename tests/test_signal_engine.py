@@ -434,3 +434,42 @@ def test_t3_plus_t4_chain_is_active():
 def test_multi_structure_collapse_is_active():
     from signal_engine import ACTIVE_EVENTS
     assert "MULTI_STRUCTURE_COLLAPSE" in ACTIVE_EVENTS
+
+
+def test_stale_book_skip_includes_rescue_metadata():
+    now_ns = time.time_ns()
+    stale_ns = now_ns - 10_000_000_000
+    engine = _engine_with_price(TOKEN_YES, 0.45)
+    result = engine.evaluate(
+        "TEAMFIGHT_SWING_30S", "radiant", 3,
+        _game(now_ns, game_time_sec=1200), _mapping(), _book(stale_ns), None,
+        severity="medium",
+    )
+    assert result["decision"] == "skip"
+    assert result["reason"] == "book_stale"
+    assert result["event_tier"] == "B"
+    assert result["token_id"] == TOKEN_YES
+    assert result["side"] == "YES"
+
+
+def test_hybrid_fair_override_drives_edge_gate():
+    now_ns = time.time_ns()
+    engine = _engine_with_price(TOKEN_YES, 0.45)
+    result = engine.evaluate_cluster(
+        events=[{
+            "event_type": "TEAMFIGHT_SWING_30S",
+            "direction": "radiant",
+            "delta": 2,
+            "severity": "medium",
+            "game_time_sec": 1200,
+        }],
+        game=_game(now_ns, game_time_sec=1200),
+        mapping=_mapping(),
+        yes_book=_book(now_ns, ask=0.46, bid=0.44),
+        no_book=None,
+        fair_price_override=0.62,
+        fair_source="hybrid",
+    )
+    assert result["decision"] == "paper_buy_yes"
+    assert result["fair_price"] == 0.62
+    assert result["fair_source"] == "hybrid"

@@ -99,12 +99,39 @@ async def main() -> None:
         print("No historical rows built.")
         return
 
+    # Calculate Team Win Ratios from collected matches
+    team_wins = defaultdict(int)
+    team_games = defaultdict(int)
+    match_ids_seen = set()
+    for row in rows:
+        m_id = row["match_id"]
+        if m_id in match_ids_seen: continue
+        match_ids_seen.add(m_id)
+        
+        r_id = row["radiant_team_id"]
+        d_id = row["dire_team_id"]
+        win = row["radiant_win"]
+        
+        if r_id:
+            team_games[r_id] += 1
+            if win: team_wins[r_id] += 1
+        if d_id:
+            team_games[d_id] += 1
+            if not win: team_wins[d_id] += 1
+            
+    # Inject win ratios back into rows
+    for row in rows:
+        r_id = row["radiant_team_id"]
+        d_id = row["dire_team_id"]
+        row["radiant_team_win_ratio"] = team_wins[r_id] / team_games[r_id] if r_id and team_games[r_id] > 0 else 0.5
+        row["dire_team_win_ratio"] = team_wins[d_id] / team_games[d_id] if d_id and team_games[d_id] > 0 else 0.5
+
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     write_header = not args.append or not output.exists() or output.stat().st_size == 0
     mode = "a" if args.append else "w"
     with output.open(mode, newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES + ["radiant_team_win_ratio", "dire_team_win_ratio"], extrasaction="ignore")
         if write_header:
             writer.writeheader()
         writer.writerows(rows)

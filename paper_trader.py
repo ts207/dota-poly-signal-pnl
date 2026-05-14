@@ -8,6 +8,7 @@ from config import (
     PAPER_SLIPPAGE_CENTS, PAPER_TRADE_SIZE_USD, MAX_OPEN_USD_PER_MATCH,
     EXIT_TAKE_PROFIT, EXIT_STOP_LOSS_ABS, EXIT_STOP_LOSS_REL,
     EXIT_HORIZON_SEC, EXIT_HORIZON_BY_EVENT, MAX_HOLD_HOURS,
+    PAPER_REENTRY_COOLDOWN_SEC,
 )
 
 
@@ -87,6 +88,8 @@ class PaperTrader:
         self.closed: list[ClosedPosition] = []
         # match_id → total USD currently open for that match
         self._match_open_usd: dict[str, float] = {}
+        # token_id → earliest next entry time after a close
+        self._token_cooldown_until_ns: dict[str, int] = {}
 
     def enter(
         self,
@@ -105,6 +108,12 @@ class PaperTrader:
         # Guard: refuse if the other side of the same binary market is already open.
         if opposing_token_id and opposing_token_id in self.positions:
             return None, "opposing_position_open"
+
+        now_ns = time.time_ns()
+        cooldown_until = self._token_cooldown_until_ns.get(token_id, 0)
+        if now_ns < cooldown_until:
+            remaining = (cooldown_until - now_ns) / 1e9
+            return None, f"reentry_cooldown ({remaining:.0f}s)"
 
         match_open = self._match_open_usd.get(match_id, 0.0)
         if match_open >= MAX_OPEN_USD_PER_MATCH:
@@ -184,6 +193,16 @@ class PaperTrader:
             )
         return self._close_position(pos, exit_px, reason, exit_game_time=None)
 
+    def update_fair_value(self, token_id: str, fair_price: float | None) -> None:
+        """Refresh an open position's model fair so exits track current ML value."""
+        pos = self.positions.get(token_id)
+        if pos is None or fair_price is None:
+            return
+        try:
+            pos.fair_price = float(fair_price)
+        except (TypeError, ValueError):
+            return
+
     def check_exits(
         self,
         book_store,
@@ -226,6 +245,8 @@ class PaperTrader:
             if exit_px is not None:
                 if exit_px >= take_profit_price:
                     to_close.append((token_id, exit_px, "take_profit"))
+                elif pos.fair_price > 0 and exit_px >= pos.fair_price:
+                    to_close.append((token_id, exit_px, "model_value_exit"))
                 elif exit_px <= stop_price:
                     to_close.append((token_id, exit_px, "stop_loss"))
                 elif event_horizon > 0 and age_sec >= event_horizon:
@@ -288,6 +309,9 @@ class PaperTrader:
             fair_price=pos.fair_price,
         )
         self.closed.append(cp)
+        cooldown_ns = int(PAPER_REENTRY_COOLDOWN_SEC * 1_000_000_000)
+        if cooldown_ns > 0:
+            self._token_cooldown_until_ns[pos.token_id] = cp.exit_time_ns + cooldown_ns
         return cp
 
     def summary(self) -> dict:

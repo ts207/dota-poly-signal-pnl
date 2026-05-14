@@ -39,19 +39,13 @@ def compute_hybrid_nowcast(
     event_only_fair: float | None = None,
     game_time_sec: int | None = None,
 ) -> HybridNowcast:
-    """Fair-value combiner using ML model as the slow anchor when available.
+    """Fair-value combiner using RealtimeStats as the slow anchor.
 
-    When slow_model_fair (from dota_fair_model) is present, it replaces the
-    heuristic event-only fair value as the baseline "slow" probability. Fast
-    event adjustments are then applied as *residual* shocks on top of the ML
-    model's expectation, not as absolute probability moves. This makes fast
-    adjustments more surgical: they only fire when the event significantly
-    deviates from what the ML model already predicts.
-
-    When slow_model_fair is absent, falls back to event_only_fair as before.
-
-    game_time_sec controls phase-aware damping: ultra-late events get different
-    adjustment scaling than early-late events.
+    The slow_model_fair is derived from 120s delayed GetRealtimeStats features.
+    We apply fast event adjustments from GetTopLiveGame (0s delayed) as residuals.
+    Additionally, we calculate 'lead drift' — the change in Radiant Lead between
+    the 120s old base and the current 0s snapshot — and apply it as a smooth 
+    probability adjustment.
     """
     source_delay_metrics = source_delay_metrics or {}
     lag = source_delay_metrics.get("game_time_lag_sec")
@@ -81,10 +75,43 @@ def compute_hybrid_nowcast(
     fight_adj = _fight_adjustment(events)
     economy_adj = _economy_adjustment(events)
     aegis_adj = _aegis_adjustment(latest_liveleague_features, events)
+    
+    # Advanced Nowcasting Layer: Non-Linear Lead Drift with Phase Elasticity
+    drift_adj = 0.0
+    if latest_toplive_snapshot:
+        top_lead = latest_toplive_snapshot.get("radiant_lead")
+        rt_lead = latest_toplive_snapshot.get("realtime_lead_nw")
+        if top_lead is not None and rt_lead is not None:
+            drift = float(top_lead - rt_lead)
+            
+            # 1. Gold Elasticity (1k gold matters more at 10m than 50m)
+            # Baseline: 1% per 1k. Decay to 0.4% per 1k at 60m.
+            minute = (game_time_sec or 1800) / 60.0
+            elasticity = 0.01 * (0.5 ** (minute / 45.0))
+            
+            # 2. Diminishing Returns (Square-root scaling for extreme swings)
+            # Small drifts (<3k) are linear; larger drifts use root-scaling.
+            if abs(drift) < 3000:
+                raw_drift_move = drift * elasticity
+            else:
+                # 3000 * elasticity + root(excess) * elasticity
+                sign = 1.0 if drift > 0 else -1.0
+                raw_drift_move = sign * (3000 * elasticity + (abs(drift) - 3000)**0.5 * 100 * elasticity)
+            
+            # 3. Buyback Damping (Inferred)
+            # If the drift is massive but the drift-team has multiple deaths in RealtimeStats,
+            # they likely bought back (spent gold to stop the bleeding).
+            dead_r = latest_liveleague_features.get("radiant_dead_count", 0) if latest_liveleague_features else 0
+            dead_d = latest_liveleague_features.get("dire_dead_count", 0) if latest_liveleague_features else 0
+            if (drift > 2000 and dead_r >= 2) or (drift < -2000 and dead_d >= 2):
+                raw_drift_move *= 0.65  # Dampen by 35% to account for buyback expenditure
+                
+            drift_adj = min(max(raw_drift_move, -0.15), 0.15)
+
     penalty = _uncertainty_penalty(lag)
     confidence = _confidence(usage, events)
 
-    raw_event_total = fast_adj + structure_adj + fight_adj + economy_adj + aegis_adj
+    raw_event_total = fast_adj + structure_adj + fight_adj + economy_adj + aegis_adj + drift_adj
 
     if has_ml:
         ml_dampened_total = _ml_residual_adjustment(

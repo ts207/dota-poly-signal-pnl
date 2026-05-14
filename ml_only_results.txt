@@ -1,0 +1,18 @@
+
+ML-ONLY STRATEGY BACKTEST (n=77)
+================================================================================
+Total Terminal PnL: $-124.25
+Win Rate: 28.6% (22/77)
+Average Edge: 24.7%
+
+Sample Trades:
+    Carstensz vs TEAM GRIND | 420.0s |  BUY_RADIANT | fill=0.350 | ml=0.492 | edge=+0.142 | pnl=-8.75
+    Carstensz vs TEAM GRIND | 342.0s |  BUY_RADIANT | fill=0.430 | ml=0.580 | edge=+0.150 | pnl=-10.75
+    Carstensz vs TEAM GRIND | 402.0s |  BUY_RADIANT | fill=0.380 | ml=0.577 | edge=+0.197 | pnl=-9.50
+    Carstensz vs TEAM GRIND | 462.0s |  BUY_RADIANT | fill=0.390 | ml=0.569 | edge=+0.179 | pnl=-9.75
+    Carstensz vs TEAM GRIND | 462.0s |  BUY_RADIANT | fill=0.370 | ml=0.569 | edge=+0.199 | pnl=-9.25
+    Carstensz vs TEAM GRIND | 462.0s |  BUY_RADIANT | fill=0.380 | ml=0.569 | edge=+0.189 | pnl=-9.50
+    Carstensz vs TEAM GRIND | 592.0s |  BUY_RADIANT | fill=0.340 | ml=0.574 | edge=+0.234 | pnl=-8.50
+    Carstensz vs TEAM GRIND | 639.0s |  BUY_RADIANT | fill=0.340 | ml=0.448 | edge=+0.108 | pnl=-8.50
+    Carstensz vs TEAM GRIND | 733.0s |  BUY_RADIANT | fill=0.340 | ml=0.448 | edge=+0.108 | pnl=-8.50
+    Carstensz vs TEAM GRIND | 793.0s |  BUY_RADIANT | fill=0.340 | ml=0.461 | edge=+0.121 | pnl=-8.50

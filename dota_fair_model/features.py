@@ -30,6 +30,8 @@ BASE_FEATURE_COLUMNS = [
     "max_respawn_timer",
     "radiant_has_aegis",
     "dire_has_aegis",
+    "radiant_team_win_ratio",
+    "dire_team_win_ratio",
 ]
 
 MISSINGNESS_SOURCE_COLUMNS = [
