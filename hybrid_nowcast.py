@@ -37,11 +37,21 @@ def compute_hybrid_nowcast(
     source_delay_metrics: dict | None,
     slow_model_fair: float | None = None,
     event_only_fair: float | None = None,
+    game_time_sec: int | None = None,
 ) -> HybridNowcast:
-    """Shadow-only fair-value combiner.
+    """Fair-value combiner using ML model as the slow anchor when available.
 
-    This intentionally returns diagnostics only. It does not place trades or
-    override the existing event engine until latency/markout evidence justifies it.
+    When slow_model_fair (from dota_fair_model) is present, it replaces the
+    heuristic event-only fair value as the baseline "slow" probability. Fast
+    event adjustments are then applied as *residual* shocks on top of the ML
+    model's expectation, not as absolute probability moves. This makes fast
+    adjustments more surgical: they only fire when the event significantly
+    deviates from what the ML model already predicts.
+
+    When slow_model_fair is absent, falls back to event_only_fair as before.
+
+    game_time_sec controls phase-aware damping: ultra-late events get different
+    adjustment scaling than early-late events.
     """
     source_delay_metrics = source_delay_metrics or {}
     lag = source_delay_metrics.get("game_time_lag_sec")
@@ -52,7 +62,9 @@ def compute_hybrid_nowcast(
             lag = top_gt - llg_gt
 
     usage = classify_liveleague_lag(lag)
-    base = slow_model_fair if slow_model_fair is not None else event_only_fair
+    has_ml = slow_model_fair is not None
+    base = slow_model_fair if has_ml else event_only_fair
+
     if base is None:
         return HybridNowcast(
             slow_model_fair=slow_model_fair,
@@ -72,15 +84,49 @@ def compute_hybrid_nowcast(
     penalty = _uncertainty_penalty(lag)
     confidence = _confidence(usage, events)
 
-    fair = _clip_probability(base + fast_adj + structure_adj + fight_adj + economy_adj + aegis_adj - penalty)
+    raw_event_total = fast_adj + structure_adj + fight_adj + economy_adj + aegis_adj
+
+    if has_ml:
+        ml_dampened_total = _ml_residual_adjustment(
+            base=base,
+            raw_adj=raw_event_total,
+            events=events,
+            game_time_sec=game_time_sec,
+        )
+        fair = _clip_probability(base + ml_dampened_total - penalty)
+    else:
+        fair = _clip_probability(base + raw_event_total - penalty)
+
     return HybridNowcast(
         slow_model_fair=slow_model_fair,
-        fast_event_adjustment=round(fast_adj + structure_adj + fight_adj + economy_adj + aegis_adj, 4),
+        fast_event_adjustment=round(raw_event_total if not has_ml else ml_dampened_total, 4),
         hybrid_fair=round(fair, 4),
         hybrid_confidence=round(confidence, 4),
         uncertainty_penalty=round(penalty, 4),
         liveleague_usage=usage,
     )
+
+
+def _ml_residual_adjustment(
+    base: float,
+    raw_adj: float,
+    events: list[Any],
+    game_time_sec: int | None
+) -> float:
+    """Dampens event shocks in extreme probability regions and scales by phase."""
+    # Probability space damping: 4*p*(1-p) makes adjustments smaller near 0/1
+    # where the model is already very certain.
+    dampening = 4.0 * base * (1.0 - base)
+    
+    # Phase scaling: Ultra-late game events have higher impact variance
+    phase_scale = 1.0
+    if game_time_sec is not None:
+        if game_time_sec > 3000:   # 50min+ (Ultra Late)
+            phase_scale = 1.5
+        elif game_time_sec > 1800: # 30min+ (Late)
+            phase_scale = 1.2
+            
+    return raw_adj * dampening * phase_scale
 
 
 def _fast_event_adjustment(events: list[Any]) -> float:

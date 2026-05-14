@@ -12,3 +12,4 @@ signals.csv
 *:Zone.Identifier
 
 logs/
+*.joblib

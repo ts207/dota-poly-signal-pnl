@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from team_utils import norm_team
+from series_model import compute_bo3_match_p
 
-SUPPORTED_MARKET_TYPES = {"MAP_WINNER"}
+SUPPORTED_MARKET_TYPES = {"MAP_WINNER", "MATCH_WINNER"}
 PLACEHOLDER_MARKERS = {
     "TOKEN_ID_HERE",
     "MATCH_OR_LOBBY_ID_HERE",
@@ -113,6 +114,34 @@ def validate_mapping_schema(mapping: dict, index: int = 0) -> MappingValidationR
     market_type = str(mapping.get("market_type", "")).upper()
     if market_type not in SUPPORTED_MARKET_TYPES:
         result.mapping_errors.append(f"unsupported market_type={market_type}")
+
+    if market_type == "MATCH_WINNER":
+        series_type_val = _to_int(mapping.get("series_type"))
+        if series_type_val is None:
+            result.mapping_errors.append("missing: series_type")
+        else:
+            try:
+                compute_bo3_match_p(0.5, 0.5, 0, 0, 1, series_type=int(series_type_val))
+            except (ValueError, TypeError) as e:
+                result.mapping_errors.append(f"invalid series_type: {e}")
+        current_game = _to_int(mapping.get("current_game_number"))
+        if current_game is not None and result.game_number is None:
+            result.game_number = current_game
+        score_yes = _to_int(mapping.get("series_score_yes"))
+        score_no = _to_int(mapping.get("series_score_no"))
+        p_next = mapping.get("p_next_yes")
+        if current_game is not None and score_yes is not None and score_no is not None and p_next is not None:
+            try:
+                compute_bo3_match_p(
+                    p_current_map_yes=0.5,
+                    p_next_yes=float(p_next),
+                    series_score_yes=int(score_yes),
+                    series_score_no=int(score_no),
+                    current_game_number=int(current_game),
+                    series_type=int(series_type_val),
+                )
+            except (ValueError, TypeError, KeyError) as e:
+                result.mapping_errors.append(str(e))
 
     if mapping.get("confidence") in (None, ""):
         result.mapping_errors.append("missing confidence")
