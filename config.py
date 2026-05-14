@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 RUN_ID = os.getenv("RUN_ID") or str(int(time.time()))
+DOTA_FAIR_MODEL_PATH = os.getenv("DOTA_FAIR_MODEL_PATH", "dota_fair_model/models/dota_fair.joblib")
 
 
 def _git_code_version() -> str:

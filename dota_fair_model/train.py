@@ -99,9 +99,30 @@ def train_phase_models(
             "calibration_method": calibration_method or "none",
         }
         artifacts["models"][phase] = model
-        importances = getattr(base_model, "feature_importances_", [])
-        ranked = sorted(zip(DEFAULT_FEATURE_COLUMNS, importances), key=lambda x: x[1], reverse=True)
-        top_features[phase] = [name for name, _ in ranked[:10]]
+
+        # Extract feature importances from the fitted model
+        import numpy as np
+        if hasattr(model, "calibrated_classifiers_"):
+            # Average importances across all CV folds
+            all_importances = []
+            for clf in model.calibrated_classifiers_:
+                if hasattr(clf, "estimator") and hasattr(clf.estimator, "feature_importances_"):
+                    all_importances.append(clf.estimator.feature_importances_)
+                elif hasattr(clf, "base_estimator") and hasattr(clf.base_estimator, "feature_importances_"):
+                    all_importances.append(clf.base_estimator.feature_importances_)
+            
+            if all_importances:
+                importances = np.mean(all_importances, axis=0)
+            else:
+                importances = []
+        else:
+            importances = getattr(model, "feature_importances_", [])
+
+        if len(importances) > 0:
+            ranked = sorted(zip(DEFAULT_FEATURE_COLUMNS, importances), key=lambda x: x[1], reverse=True)
+            top_features[phase] = [name for name, _ in ranked[:10]]
+        else:
+            top_features[phase] = []
 
     artifacts["metadata"] = ModelMetadata(
         schema_version=FEATURE_SCHEMA_VERSION,

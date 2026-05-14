@@ -4,6 +4,7 @@ import asyncio
 import traceback
 import aiohttp
 import time
+import os
 
 from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
@@ -23,9 +24,11 @@ from config import (
     STEAM_API_KEY, STEAM_POLL_SECONDS, PAPER_EXECUTION_DELAY_MS, LIVE_TRADING,
     ALLOW_CONFIRMATION_ONLY_LIVE_TRADES, MAX_BOOK_AGE_MS, MIN_EXECUTABLE_EDGE,
     MIN_LAG, MAX_SPREAD, MIN_ASK_SIZE_USD, PAPER_SLIPPAGE_CENTS, PAPER_TRADE_SIZE_USD,
-    PRICE_LOOKBACK_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS
+    PRICE_LOOKBACK_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS, DOTA_FAIR_MODEL_PATH
 )
 from sync_markets import sync_markets_to_games, load_markets, write_markets
+from dota_fair_model.inference import load_bundle
+from dota_fair_model.features import build_feature_row
 
 MAPPING_REFRESH_SECONDS = 60
 
@@ -115,6 +118,7 @@ async def steam_loop(
     llg_cache: LiveLeagueContextCache,
     mappings: list[dict],
     asset_ids: list[str],
+    model_bundle: Any | None = None,
     http_session: aiohttp.ClientSession | None = None,
 ):
     if not STEAM_API_KEY or STEAM_API_KEY == "replace_me":
@@ -344,6 +348,20 @@ async def steam_loop(
                                     signal["liveleague_derived_events"] = game.get("liveleague_derived_events", [])
                                 else:
                                     signal["liveleague_derived_events"] = []
+                                # ML prediction for slow_model_fair
+                                slow_model_fair = None
+                                if model_bundle is not None:
+                                    try:
+                                        # Use event_direction to decide if we want Radiant or Dire probability
+                                        feat_row = build_feature_row(game)
+                                        pred = model_bundle.predict_radiant(feat_row)
+                                        p_rad = pred.get("radiant_fair_probability")
+                                        if p_rad is not None:
+                                            # If event is for radiant, slow_model_fair is p_radiant.
+                                            # If event is for dire, slow_model_fair is 1 - p_radiant.
+                                            slow_model_fair = p_rad if event_direction == "radiant" else (1.0 - p_rad)
+                                    except Exception as e:
+                                        print(f"ML prediction error: {e}")
 
                                 lag = game.get("game_time_lag_sec")
                                 nowcast = compute_hybrid_nowcast(
@@ -351,7 +369,7 @@ async def steam_loop(
                                     latest_toplive_snapshot=game,
                                     toplive_event_cluster=cluster_events,
                                     source_delay_metrics={"game_time_lag_sec": lag},
-                                    slow_model_fair=None,
+                                    slow_model_fair=slow_model_fair,
                                     event_only_fair=signal.get("fair_price"),
                                 )
                                 signal.update(nowcast.to_dict())
@@ -811,6 +829,17 @@ async def main():
     rescue_logger = BookRefreshRescueLogger()
     match_winner_logger = MatchWinnerSignalLogger(log_dir="logs")
 
+    model_bundle = None
+    if os.path.exists(DOTA_FAIR_MODEL_PATH):
+        print(f"Loading dota_fair model from {DOTA_FAIR_MODEL_PATH}...")
+        try:
+            model_bundle = load_bundle(DOTA_FAIR_MODEL_PATH)
+            print(f"  model loaded (phases: {', '.join(model_bundle.models.keys())})")
+        except Exception as e:
+            print(f"  failed to load model: {e}")
+    else:
+        print(f"No model found at {DOTA_FAIR_MODEL_PATH} (skipping ML features)")
+
     asset_ids = []
     for m in mappings:
         asset_ids.extend([m["yes_token_id"], m["no_token_id"]])
@@ -834,7 +863,7 @@ async def main():
         async with aiohttp.ClientSession() as session:
             await asyncio.gather(
                 listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
-                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, rescue_logger, match_winner_logger, llg_cache, mappings, asset_ids, http_session=session),
+                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, rescue_logger, match_winner_logger, llg_cache, mappings, asset_ids, model_bundle=model_bundle, http_session=session),
             )
     except asyncio.CancelledError:
         pass
