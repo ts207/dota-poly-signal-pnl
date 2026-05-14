@@ -34,10 +34,10 @@ async def test_match_winner_sidecar_integration(tmp_path):
     
     # Mock store and engine
     book_store = BookStore()
-    book_store.put("map_yes", {"best_bid": 0.40, "best_ask": 0.45, "best_bid_size": 100, "best_ask_size": 100})
-    book_store.put("map_no", {"best_bid": 0.50, "best_ask": 0.55, "best_bid_size": 100, "best_ask_size": 100})
-    book_store.put("match_yes", {"best_bid": 0.60, "best_ask": 0.65, "best_bid_size": 100, "best_ask_size": 100})
-    book_store.put("match_no", {"best_bid": 0.30, "best_ask": 0.35, "best_bid_size": 100, "best_ask_size": 100})
+    book_store.update_direct("map_yes", best_bid=0.40, best_ask=0.45, bid_size=100, ask_size=100)
+    book_store.update_direct("map_no", best_bid=0.50, best_ask=0.55, bid_size=100, ask_size=100)
+    book_store.update_direct("match_yes", best_bid=0.60, best_ask=0.65, bid_size=100, ask_size=100)
+    book_store.update_direct("match_no", best_bid=0.30, best_ask=0.35, bid_size=100, ask_size=100)
     
     trader = PaperTrader()
     signal_engine = EventSignalEngine(trader=trader)

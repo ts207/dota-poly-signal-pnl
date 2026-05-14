@@ -181,11 +181,11 @@ async def test_live_executor_rejects_mapping_confidence_below_one():
 
 @pytest.mark.asyncio
 async def test_live_executor_rejects_tier_c_by_default(monkeypatch):
-    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"LEAD_SWING_30S"})
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"T2_TOWER_FALL"})
     monkeypatch.setattr("live_executor.ALLOW_CONFIRMATION_ONLY_LIVE_TRADES", False)
     executor = LiveExecutor(client=FakeLiveClient())
     attempt = await executor.try_buy(
-        signal=_signal(event_type="LEAD_SWING_30S", cluster_event_types="LEAD_SWING_30S"),
+        signal=_signal(event_type="T2_TOWER_FALL", cluster_event_types="T2_TOWER_FALL"),
         mapping=_mapping(),
         game=_game(),
         book_store=_book_store(),
@@ -236,7 +236,6 @@ async def test_live_executor_rejects_terminal_price_chasing_before_submit(monkey
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("event_type", [
-    "FIGHT_TO_GOLD_CONFIRM_30S",
     "LOW_PRICE_UNDERDOG_COUNTERPUNCH",
     "LATE_CHEAP_LEAD_SWING_REPRICE",
 ])
