@@ -113,6 +113,10 @@ class SignalLogger(CsvLogger):
             "market_game_number_match", "duplicate_match_id_error",
             "slow_model_fair", "fast_event_adjustment", "hybrid_fair",
             "hybrid_confidence", "uncertainty_penalty",
+            "proxy_market_type", "is_game3_match_proxy",
+            "series_score_yes", "series_score_no",
+            "current_game_number", "series_type",
+            "structure_uncertainty_penalty",
         ])
 
     def log_signal(self, game: dict, mapping: dict, signal: dict, event_type: str = "",
@@ -153,8 +157,8 @@ class SignalLogger(CsvLogger):
             "networth_delta_per_30s": signal.get("networth_delta_per_30s"),
             "kill_diff_delta_per_30s": signal.get("kill_diff_delta_per_30s"),
             "source_cadence_quality": signal.get("source_cadence_quality"),
-            "token_id": token_id,
-            "side": side,
+            "token_id": token_id or signal.get("token_id"),
+            "side": side or signal.get("side"),
             "lag": signal.get("lag"),
             "expected_move": signal.get("expected_move"),
             "market_move_recent": signal.get("market_move_recent"),
@@ -179,7 +183,7 @@ class SignalLogger(CsvLogger):
             "phase_mult": signal.get("phase_mult"),
             "event_kill_lead": signal.get("event_kill_lead"),
             "decision": signal.get("decision"),
-            "skip_reason": signal.get("reason"),
+            "skip_reason": signal.get("skip_reason") or signal.get("reason"),
             "steam_age_ms": signal.get("steam_age_ms"),
             "source_update_age_sec": signal.get("source_update_age_sec"),
             "stream_delay_s": signal.get("stream_delay_s"),
@@ -196,6 +200,13 @@ class SignalLogger(CsvLogger):
             "hybrid_fair": signal.get("hybrid_fair"),
             "hybrid_confidence": signal.get("hybrid_confidence"),
             "uncertainty_penalty": signal.get("uncertainty_penalty"),
+            "proxy_market_type": signal.get("proxy_market_type"),
+            "is_game3_match_proxy": signal.get("is_game3_match_proxy"),
+            "series_score_yes": signal.get("series_score_yes"),
+            "series_score_no": signal.get("series_score_no"),
+            "current_game_number": signal.get("current_game_number"),
+            "series_type": signal.get("series_type"),
+            "structure_uncertainty_penalty": signal.get("structure_uncertainty_penalty"),
         })
 
 
@@ -420,6 +431,10 @@ class LiveLeagueRawLogger:
         }
         with open(self.filename, "a", encoding="utf-8") as f:
             f.write(_json.dumps(row, default=str, sort_keys=True) + "\n")
+
+    def stop(self):
+        """No-op for JSONL logger since it opens/closes on every write."""
+        pass
 
 
 class RichContextLogger(CsvLogger):

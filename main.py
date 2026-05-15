@@ -253,6 +253,7 @@ async def steam_loop(
     live_exit_executor: LiveExitExecutor | None = None,
     live_exit_logger: LiveExitLogger | None = None,
     check_live_exits_fn: Any | None = None,
+    shadow_logger: ShadowTradeLogger | None = None,
 ):
     if not STEAM_API_KEY or STEAM_API_KEY == "replace_me":
         print("Missing STEAM_API_KEY. Copy .env.example to .env and fill it in.")
@@ -292,6 +293,14 @@ async def steam_loop(
                                 f"({u['radiant_team']} vs {u['dire_team']})"
                             )
                     fresh_mappings, _ = load_valid_mappings()
+                    fresh_mappings = [
+                        m for m in fresh_mappings
+                        if is_active_strategy_mapping(
+                            m,
+                            enable_match_winner_game3_proxy=ENABLE_MATCH_WINNER_GAME3_PROXY,
+                            enable_match_winner_research=ENABLE_MATCH_WINNER_RESEARCH,
+                        )
+                    ]
                     new_ids = {(m["yes_token_id"], m["no_token_id"]) for m in fresh_mappings}
                     old_ids = {(m["yes_token_id"], m["no_token_id"]) for m in mappings}
                     added = new_ids - old_ids
@@ -1261,6 +1270,7 @@ async def main():
         rescue_logger,
         signal_markout_logger,
         shadow_logger,
+        llg_raw_logger,
     ]
     if match_winner_logger:
         loggers.append(match_winner_logger)
@@ -1372,6 +1382,7 @@ async def main():
                     live_exit_executor=live_exit_executor,
                     live_exit_logger=live_exit_logger,
                     check_live_exits_fn=_check_live_exits,
+                    shadow_logger=shadow_logger,
                 ),
             ]
             if LIVE_TRADING:

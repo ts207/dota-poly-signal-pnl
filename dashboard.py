@@ -26,7 +26,7 @@ from config import (
     DOTA_EVENTS_CSV_PATH,
     BOOK_EVENTS_CSV_PATH,
     BOOK_REFRESH_RESCUE_CSV_PATH,
-    LIVE_LEAGUE_FEATURES_CSV_PATH,
+    RICH_CONTEXT_CSV_PATH,
 )
 from mapping import load_valid_mappings
 
@@ -217,7 +217,7 @@ def _data_health(
 ) -> dict:
     items = [
         _health_item("TopLive", [r for r in raw_rows if r.get("data_source") == "top_live"], "received_at_utc"),
-        _health_item("LiveLeague", _read_csv(LIVE_LEAGUE_FEATURES_CSV_PATH), "timestamp_utc"),
+        _health_item("LiveLeague", _read_csv(RICH_CONTEXT_CSV_PATH), "timestamp_utc"),
         _health_item("Signals", signal_rows, "timestamp_utc"),
         _health_item("Events", event_rows, "timestamp_utc"),
         _health_item("Books", book_rows, "timestamp_utc"),
@@ -275,7 +275,7 @@ def _to_int(v, default: int = 0) -> int:
 def _latest_liveleague_by_match() -> dict[str, dict]:
     by_match: dict[str, dict] = {}
     min_ts = datetime.now(timezone.utc).timestamp() - _LIVE_GAME_MAX_AGE_SEC
-    for r in _read_csv(LIVE_LEAGUE_FEATURES_CSV_PATH):
+    for r in _read_csv(RICH_CONTEXT_CSV_PATH):
         mid = r.get("match_id") or r.get("lobby_id") or ""
         if not mid:
             continue
