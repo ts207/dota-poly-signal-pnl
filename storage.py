@@ -9,7 +9,7 @@ from config import (
     CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH,
     LIVE_ATTEMPTS_CSV_PATH, LATENCY_CSV_PATH, LIVE_LEAGUE_RAW_JSONL_PATH,
     RICH_CONTEXT_CSV_PATH, SOURCE_DELAY_CSV_PATH,
-    BOOK_REFRESH_RESCUE_CSV_PATH,
+    BOOK_REFRESH_RESCUE_CSV_PATH, SHADOW_TRADES_CSV_PATH,
     RUN_ID, CODE_VERSION, CONFIG_HASH,
 )
 
@@ -577,6 +577,48 @@ class LiveExitLogger(CsvLogger):
     def log_exit_attempt(self, attempt) -> None:
         d = attempt.to_dict() if hasattr(attempt, "to_dict") else dict(attempt)
         d["timestamp_utc"] = utc_now_iso()
+        self.append(d)
+
+
+class ShadowTradeLogger(CsvLogger):
+    def __init__(self, filename: str = SHADOW_TRADES_CSV_PATH):
+        super().__init__(filename, [
+            "shadow_id",
+            "timestamp_utc",
+            "event_type",
+            "event_tier",
+            "event_family",
+            "market_type",
+            "proxy_market_type",
+            "is_game3_match_proxy",
+            "token_id",
+            "side",
+            "match_id",
+            "market_name",
+            "decision",
+            "skip_reason",
+            "entry_price",
+            "bid_at_entry",
+            "ask_at_entry",
+            "spread_at_entry",
+            "fair_price",
+            "executable_edge",
+            "lag",
+            "event_quality",
+            "source_cadence_quality",
+            "game_time_sec",
+            "markout_3s",
+            "markout_10s",
+            "markout_30s",
+            "markout_60s",
+            "would_pnl_3s",
+            "would_pnl_10s",
+            "would_pnl_30s",
+            "would_pnl_60s",
+        ])
+
+    def log_shadow_trade(self, shadow) -> None:
+        d = shadow.to_dict() if hasattr(shadow, "to_dict") else dict(shadow)
         self.append(d)
 
 

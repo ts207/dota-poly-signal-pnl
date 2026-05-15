@@ -9,12 +9,14 @@ from typing import Any, Iterable
 from team_utils import norm_team
 from event_taxonomy import TIER_A_EVENTS, TIER_B_EVENTS, event_family, event_is_primary, event_tier
 from series_model import compute_bo3_match_p
+from market_scope import is_game3_match_proxy, market_scope_metadata
 
 from config import (
     MAX_STEAM_AGE_MS, MAX_SOURCE_UPDATE_AGE_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS,
     MAX_BOOK_AGE_MS, MAX_SPREAD, MIN_LAG, MIN_EXECUTABLE_EDGE,
     PRICE_LOOKBACK_SEC, DEFAULT_MAX_FILL_PRICE,
     MIN_ASK_SIZE_USD, PAPER_TRADE_SIZE_USD, PAPER_SLIPPAGE_CENTS,
+    ENABLE_MATCH_WINNER_GAME3_PROXY, ENABLE_MATCH_WINNER_TRADING,
 )
 
 
@@ -359,9 +361,29 @@ class EventSignalEngine:
                 "event_is_primary": event_is_primary(primary_event_type),
             }
 
-        market_type = mapping.get("market_type")
+        market_type = str(mapping.get("market_type") or "").upper()
+        is_map3_proxy = (
+            market_type == "MATCH_WINNER"
+            and ENABLE_MATCH_WINNER_GAME3_PROXY
+            and is_game3_match_proxy(mapping)
+        )
+
+        if market_type == "MATCH_WINNER" and not is_map3_proxy:
+            return {
+                "decision": "skip",
+                "reason": "match_winner_non_decider_disabled",
+                **market_scope_metadata(mapping),
+            }
+
         if market_type not in ("MAP_WINNER", "MATCH_WINNER"):
             return {"decision": "skip", "reason": "unsupported_market_type"}
+
+        if market_type == "MATCH_WINNER" and not (is_map3_proxy or ENABLE_MATCH_WINNER_TRADING):
+            return {
+                "decision": "skip",
+                "reason": "match_winner_disabled",
+                **market_scope_metadata(mapping),
+            }
 
         game_time = game.get("game_time_sec")
         if game_time is not None and game_time < MIN_GAME_TIME_SEC:
@@ -576,37 +598,33 @@ class EventSignalEngine:
         remaining_move = fair_price - current_price
 
         if market_type == "MATCH_WINNER" and fair_price_override is None:
-            series_score_yes = game.get("series_score_yes")
-            series_score_no = game.get("series_score_no")
-            current_game_number = game.get("current_game_number") or game.get("game_number_in_series")
-            series_type_val = mapping.get("series_type") or 3
-            if series_score_yes is not None and series_score_no is not None and current_game_number is not None:
-                try:
-                    series_score_yes = int(series_score_yes)
-                    series_score_no = int(series_score_no)
-                    current_game_number = int(current_game_number)
-                    p_current_map_yes = fair_price
-                    p_next_yes = fair_price
-                    series_fair = compute_bo3_match_p(
-                        p_current_map_yes=max(0.01, min(0.99, p_current_map_yes)),
-                        p_next_yes=max(0.01, min(0.99, p_next_yes)),
-                        series_score_yes=series_score_yes,
-                        series_score_no=series_score_no,
-                        current_game_number=current_game_number,
-                        series_type=int(series_type_val),
-                    )
-                    if not event_favors_yes:
-                        series_fair = 1.0 - series_fair
-                    fair_price = max(0.01, min(0.99, series_fair))
-                    expected_move = fair_price - anchor_price
-                    remaining_move = fair_price - current_price
-                    executable_price = min(ask + PAPER_SLIPPAGE_CENTS, 0.99)
-                except (ValueError, TypeError):
-                    pass
+            if is_map3_proxy:
+                fair_source = "match_winner_game3_proxy"
+            else:
+                return {
+                    "decision": "skip",
+                    "reason": "match_winner_non_decider_disabled",
+                    **market_scope_metadata(mapping),
+                }
+
         executable_edge = fair_price - executable_price
         lag = remaining_move
 
         required_edge = self._required_edge(events, game, ask, spread)
+        
+        # Increase uncertainty_penalty for low-confidence structure events
+        structure_uncertainty_penalty = 0.0
+        for e in events:
+            etype = _event_attr(e, "event_type")
+            if etype in {
+                "OBJECTIVE_CONVERSION_T2", "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T4",
+                "THRONE_EXPOSED", "BASE_PRESSURE_T4", "BASE_PRESSURE_T3_COLLAPSE",
+            }:
+                struct_conf = _event_attr(e, "structure_confidence")
+                if struct_conf is not None and float(struct_conf) < 1.0:
+                    structure_uncertainty_penalty += (1.0 - float(struct_conf)) * 0.06
+        
+        required_edge += structure_uncertainty_penalty
         if executable_edge < required_edge:
             return {
                 "decision": "skip", "reason": "edge_too_small",
@@ -715,6 +733,12 @@ class EventSignalEngine:
             "data_source": data_source,
             "book_age_ms": book_age,
             "book_age_at_signal_ms": book_age,
+            "structure_uncertainty_penalty": round(structure_uncertainty_penalty, 4),
+            **market_scope_metadata(mapping),
+            "series_score_yes": mapping.get("series_score_yes"),
+            "series_score_no": mapping.get("series_score_no"),
+            "current_game_number": mapping.get("current_game_number") or mapping.get("game_number"),
+            "series_type": mapping.get("series_type"),
         }
 
     def _adjusted_event_value(self, event: Any, game: dict) -> float:
@@ -722,6 +746,15 @@ class EventSignalEngine:
         spec = ACTIVE_EVENTS[event_type]
         game_time = game.get("game_time_sec")
         value = spec.base * time_multiplier(game_time)
+        
+        # For structure/base events, use structure_confidence as a probability multiplier.
+        if event_type in {
+            "OBJECTIVE_CONVERSION_T2", "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T4",
+            "THRONE_EXPOSED", "BASE_PRESSURE_T4", "BASE_PRESSURE_T3_COLLAPSE",
+        }:
+            struct_conf = _event_attr(event, "structure_confidence")
+            if struct_conf is not None:
+                value *= float(struct_conf)
 
         event_game_time = _event_attr(event, "game_time_sec", game_time)
         age_sec = 0.0

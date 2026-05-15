@@ -128,6 +128,7 @@ def test_structure_only_is_component_not_trade_event():
 
 def test_objective_conversion_requires_same_direction_tactical_event():
     detector = EventDetector()
+    # T3 bottom is bit 2
     detector.observe(game(0, 0, r_score=10, d_score=10, building_state=ALL_ALIVE, data_source="live_league"), mapping())
     events = detector.observe(
         game(31, -3500, r_score=10, d_score=14, building_state=ALL_ALIVE & ~(1 << 2), data_source="live_league"),
@@ -151,6 +152,7 @@ def test_t2_conversion_is_research_support():
     detector = EventDetector()
     detector.observe(game(0, 0, r_score=10, d_score=10, building_state=ALL_ALIVE, data_source="live_league"), mapping())
     events = detector.observe(
+        # T2 middle is bit 4
         game(31, -1800, r_score=10, d_score=12, building_state=ALL_ALIVE & ~(1 << 4), data_source="live_league"),
         mapping(),
     )
@@ -173,3 +175,29 @@ def test_no_retired_fixed_window_events_are_primary():
     for event in events:
         assert not event.event_type.endswith("_30S")
         assert not event.event_type.endswith("_60S")
+
+def test_throne_exposed_semantics():
+    detector = EventDetector()
+    # Dire T3 dead, T4 alive (Bits 17,18,19 dead, 20,21 alive)
+    mask = ALL_ALIVE & ~(0x1C0 << 11)
+    detector.observe(game(1000, 0, building_state=mask), mapping())
+    # Both Dire T4 fall (bits 20, 21)
+    # Support (kills) in same direction (Radiant)
+    events = detector.observe(game(1031, 1000, r_score=3, d_score=0, building_state=mask & ~(0x600 << 11)), mapping())
+    # OBJECTIVE_CONVERSION_T4 (120) should be primary, THRONE_EXPOSED (110) should be component
+    assert "OBJECTIVE_CONVERSION_T4" in event_types(events)
+    primary = next(e for e in events if e.event_type == "OBJECTIVE_CONVERSION_T4")
+    assert "THRONE_EXPOSED" in (primary.component_event_types or "")
+
+def test_base_pressure_requires_pressure():
+    detector = EventDetector()
+    # Dire T4 already dead
+    mask = ALL_ALIVE & ~(0x7FF << 11)
+    detector.observe(game(1000, 0, building_state=mask), mapping())
+    # Just bit change (no kills/NW)
+    events = detector.observe(game(1031, 0, building_state=mask), mapping())
+    assert "BASE_PRESSURE_T4" not in event_types(events)
+    
+    # Pressure added (Radiant support)
+    events = detector.observe(game(1062, 500, r_score=1, d_score=0, building_state=mask), mapping())
+    assert "BASE_PRESSURE_T4" in event_types(events)

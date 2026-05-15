@@ -54,6 +54,24 @@ async def test_unknown_sell_fill_response_does_not_close(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_ambiguous_fill_fields_rejected(monkeypatch):
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
+    client = FakeLiveClient()
+    # Response with ambiguous fields that could be USDC
+    client.sell_response = {"success": True, "status": "matched", "amountFilled": 10.0, "filled_size": 10.0}
+    
+    executor = LiveExitExecutor(client=client)
+    pos = MockPosition()
+    book = {"best_bid": 0.50}
+    mapping = {"tick_size": "0.01"}
+    
+    attempt = await executor.try_exit(position=pos, book=book, reason="test", mapping=mapping)
+    
+    # Should be 0 because we only accept clearly share-denominated fields
+    assert attempt.shares_filled == 0.0
+
+
+@pytest.mark.anyio
 async def test_explicit_filled_shares_closes_position(monkeypatch):
     monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
     client = FakeLiveClient()

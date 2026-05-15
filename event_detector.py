@@ -7,6 +7,7 @@ from typing import Any
 
 from config import EVENT_COOLDOWN_GAME_SECONDS
 from event_taxonomy import EVENT_SCHEMA_VERSION, event_family, event_is_primary, event_tier
+from structure_state import StructureState, StructureDelta, decode_structure_state, diff_structure_state
 
 COMEBACK_MIN_PRIOR_DEFICIT = 3000
 MAJOR_COMEBACK_PRIOR_DEFICIT = 8000
@@ -25,10 +26,6 @@ NORMAL_GAP_SEC = 75
 STALE_GAP_SEC = 150
 MAX_FIGHT_GAP_SEC = 90
 
-T1_MASK = (1 << 0) | (1 << 3) | (1 << 6)
-T2_MASK = (1 << 1) | (1 << 4) | (1 << 7)
-T3_MASK = (1 << 2) | (1 << 5) | (1 << 8)
-T4_MASK = (1 << 9) | (1 << 10)
 SIDE_MASK = 0x7FF
 
 TACTICAL_PRIORITY: dict[str, int] = {
@@ -133,6 +130,7 @@ class SnapshotDelta:
     kill_diff_delta: int | None
     total_kills_delta: int | None
     lead_flipped: bool
+    structure_delta: StructureDelta | None = None
 
     @property
     def networth_delta_per_30s(self) -> float | None:
@@ -192,6 +190,23 @@ class DotaEvent:
     networth_delta_per_30s: float | None = None
     kill_diff_delta_per_30s: float | None = None
     source_cadence_quality: str | None = None
+    structure_source_field: str | None = None
+    structure_schema: str | None = None
+    structure_confidence: float | None = None
+    structure_delta_valid: bool | None = None
+    structure_delta_reason: str | None = None
+    radiant_t2_alive_before: int | None = None
+    radiant_t2_alive_after: int | None = None
+    radiant_t3_alive_before: int | None = None
+    radiant_t3_alive_after: int | None = None
+    radiant_t4_alive_before: int | None = None
+    radiant_t4_alive_after: int | None = None
+    dire_t2_alive_before: int | None = None
+    dire_t2_alive_after: int | None = None
+    dire_t3_alive_before: int | None = None
+    dire_t3_alive_after: int | None = None
+    dire_t4_alive_before: int | None = None
+    dire_t4_alive_after: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -246,6 +261,7 @@ class EventDetector:
             "tower_state": _to_int(game.get("tower_state")),
             "building_state": _to_int(game.get("building_state")),
             "data_source": game.get("data_source"),
+            "structure_state": decode_structure_state(game),
         }
 
     def _snapshot_delta(self, previous: dict, current: dict) -> SnapshotDelta | None:
@@ -291,6 +307,7 @@ class EventDetector:
             kill_diff_delta=kill_diff_delta,
             total_kills_delta=total_kills_delta,
             lead_flipped=lead_flipped,
+            structure_delta=diff_structure_state(previous.get("structure_state"), current.get("structure_state")),
         )
 
     def _base_event(self, snap: dict, mapping: dict | None, **kwargs) -> DotaEvent:
@@ -308,6 +325,9 @@ class EventDetector:
             mapping_name=(mapping or {}).get("name"),
             yes_team=(mapping or {}).get("yes_team"),
             yes_token_id=(mapping or {}).get("yes_token_id"),
+            structure_source_field=snap.get("structure_state").source_field if snap.get("structure_state") else None,
+            structure_schema=snap.get("structure_state").schema if snap.get("structure_state") else None,
+            structure_confidence=snap.get("structure_state").confidence if snap.get("structure_state") else 0.0,
             **kwargs,
         )
 
@@ -344,6 +364,20 @@ class EventDetector:
             networth_delta_per_30s=_round_optional(delta.networth_delta_per_30s),
             kill_diff_delta_per_30s=_round_optional(delta.kill_diff_delta_per_30s),
             source_cadence_quality=delta.source_cadence_quality,
+            structure_delta_valid=delta.structure_delta.valid if delta.structure_delta else False,
+            structure_delta_reason=delta.structure_delta.reason if delta.structure_delta else "missing",
+            radiant_t2_alive_before=delta.structure_delta.radiant_t2_before if delta.structure_delta else None,
+            radiant_t2_alive_after=delta.structure_delta.radiant_t2_after if delta.structure_delta else None,
+            radiant_t3_alive_before=delta.structure_delta.radiant_t3_before if delta.structure_delta else None,
+            radiant_t3_alive_after=delta.structure_delta.radiant_t3_after if delta.structure_delta else None,
+            radiant_t4_alive_before=delta.structure_delta.radiant_t4_before if delta.structure_delta else None,
+            radiant_t4_alive_after=delta.structure_delta.radiant_t4_after if delta.structure_delta else None,
+            dire_t2_alive_before=delta.structure_delta.dire_t2_before if delta.structure_delta else None,
+            dire_t2_alive_after=delta.structure_delta.dire_t2_after if delta.structure_delta else None,
+            dire_t3_alive_before=delta.structure_delta.dire_t3_before if delta.structure_delta else None,
+            dire_t3_alive_after=delta.structure_delta.dire_t3_after if delta.structure_delta else None,
+            dire_t4_alive_before=delta.structure_delta.dire_t4_before if delta.structure_delta else None,
+            dire_t4_alive_after=delta.structure_delta.dire_t4_after if delta.structure_delta else None,
             **_component_metadata(components),
         )
 
@@ -404,115 +438,73 @@ class EventDetector:
         return components
 
     def _structure_components(self, delta: SnapshotDelta) -> list[EventComponent]:
-        prev = delta.previous
-        cur = delta.current
-        if cur.get("data_source") == "top_live" and cur.get("tower_state") is None:
+        prev_state = decode_structure_state(delta.previous)
+        cur_state = decode_structure_state(delta.current)
+        sd = diff_structure_state(prev_state, cur_state)
+
+        if not sd.valid:
             return []
 
-        prev_bs = prev.get("tower_state")
-        cur_bs = cur.get("tower_state")
-        if prev_bs is None:
-            prev_bs = prev.get("building_state")
-        if cur_bs is None:
-            cur_bs = cur.get("building_state")
-        if prev_bs is None or cur_bs is None or prev_bs == cur_bs:
-            return []
-
-        prev_rad_alive = prev_bs & SIDE_MASK
-        cur_rad_alive = cur_bs & SIDE_MASK
-        rad_fallen = prev_rad_alive & ~cur_rad_alive
-
-        prev_dire_alive = (prev_bs >> 11) & SIDE_MASK
-        cur_dire_alive = (cur_bs >> 11) & SIDE_MASK
-        dire_fallen = prev_dire_alive & ~cur_dire_alive
-
-        components: list[EventComponent] = []
-        if rad_fallen:
-            components.extend(self._side_structure_components(
-                prev_rad_alive, cur_rad_alive, rad_fallen, "dire", prev_bs, cur_bs, delta.snapshot_gap_sec
-            ))
-        if dire_fallen:
-            components.extend(self._side_structure_components(
-                prev_dire_alive, cur_dire_alive, dire_fallen, "radiant", prev_bs, cur_bs, delta.snapshot_gap_sec
-            ))
-        return components
-
-    def _side_structure_components(
-        self,
-        prev_side_bits: int,
-        cur_side_bits: int,
-        fallen_side_bits: int,
-        direction: str,
-        previous_value: int,
-        current_value: int,
-        gap: int,
-    ) -> list[EventComponent]:
-        t4_count = _bit_count(fallen_side_bits & T4_MASK)
-        t3_count = _bit_count(fallen_side_bits & T3_MASK)
-        t2_count = _bit_count(fallen_side_bits & T2_MASK)
         components: list[EventComponent] = []
 
-        if t4_count:
-            cur_t4_alive = _bit_count(cur_side_bits & T4_MASK)
+        def add(component_type: str, direction: str, fallen: int):
             components.append(EventComponent(
-                "SECOND_T4_TOWER_FALL" if cur_t4_alive == 0 else "FIRST_T4_TOWER_FALL",
+                component_type,
                 direction,
-                t4_count,
-                gap,
-                previous_value,
-                current_value,
+                fallen,
+                delta.snapshot_gap_sec,
+                sd.reason,
+                sd.schema,
             ))
-            if cur_t4_alive == 0:
-                components.append(EventComponent(
-                    "THRONE_EXPOSED_COMPONENT",
-                    direction,
-                    t4_count,
-                    gap,
-                    previous_value,
-                    current_value,
-                ))
 
-        if t3_count:
-            cur_t3_alive = _bit_count(cur_side_bits & T3_MASK)
-            t3_dead_after = 3 - cur_t3_alive
-            components.append(EventComponent(
-                "MULTIPLE_T3_TOWERS_DOWN" if t3_dead_after >= 2 else "T3_TOWER_FALL",
-                direction,
-                t3_count,
-                gap,
-                previous_value,
-                current_value,
-            ))
-            if cur_t3_alive == 0:
-                components.append(EventComponent(
-                    "ALL_T3_TOWERS_DOWN",
-                    direction,
-                    t3_dead_after,
-                    gap,
-                    previous_value,
-                    current_value,
-                ))
+        # Radiant towers fell => Dire is favored.
+        if sd.radiant_t4_fallen:
+            add(
+                "SECOND_T4_TOWER_FALL" if sd.radiant_t4_after == 0 else "FIRST_T4_TOWER_FALL",
+                "dire",
+                sd.radiant_t4_fallen,
+            )
+            if sd.radiant_t4_after == 0:
+                add("THRONE_EXPOSED_COMPONENT", "dire", sd.radiant_t4_fallen)
 
-        if t2_count:
-            components.append(EventComponent("T2_TOWER_FALL", direction, t2_count, gap, previous_value, current_value))
-            cur_t2_alive = _bit_count(cur_side_bits & T2_MASK)
-            t2_dead_after = 3 - cur_t2_alive
-            if cur_t2_alive == 0:
-                components.append(EventComponent("ALL_T2_TOWERS_DOWN", direction, t2_dead_after, gap, previous_value, current_value))
-            elif t2_dead_after >= 2:
-                components.append(EventComponent("MULTIPLE_T2_TOWERS_DOWN", direction, t2_dead_after, gap, previous_value, current_value))
+        if sd.radiant_t3_fallen:
+            add(
+                "MULTIPLE_T3_TOWERS_DOWN" if (sd.radiant_t3_after or 0) <= 1 else "T3_TOWER_FALL",
+                "dire",
+                sd.radiant_t3_fallen,
+            )
+            if sd.radiant_t3_after == 0:
+                add("ALL_T3_TOWERS_DOWN", "dire", 3)
 
-        tiers = set()
-        if t2_count:
-            tiers.add("t2")
-        if t3_count:
-            tiers.add("t3")
-        if t4_count:
-            tiers.add("t4")
-        if "t3" in tiers and "t4" in tiers:
-            components.append(EventComponent("T3_PLUS_T4_CHAIN", direction, t3_count + t4_count, gap, previous_value, current_value))
-        if len(tiers) >= 2:
-            components.append(EventComponent("MULTI_STRUCTURE_COLLAPSE", direction, t2_count + t3_count + t4_count, gap, previous_value, current_value))
+        if sd.radiant_t2_fallen:
+            add("T2_TOWER_FALL", "dire", sd.radiant_t2_fallen)
+            if sd.radiant_t2_after == 0:
+                add("ALL_T2_TOWERS_DOWN", "dire", 3)
+
+        # Dire towers fell => Radiant is favored.
+        if sd.dire_t4_fallen:
+            add(
+                "SECOND_T4_TOWER_FALL" if sd.dire_t4_after == 0 else "FIRST_T4_TOWER_FALL",
+                "radiant",
+                sd.dire_t4_fallen,
+            )
+            if sd.dire_t4_after == 0:
+                add("THRONE_EXPOSED_COMPONENT", "radiant", sd.dire_t4_fallen)
+
+        if sd.dire_t3_fallen:
+            add(
+                "MULTIPLE_T3_TOWERS_DOWN" if (sd.dire_t3_after or 0) <= 1 else "T3_TOWER_FALL",
+                "radiant",
+                sd.dire_t3_fallen,
+            )
+            if sd.dire_t3_after == 0:
+                add("ALL_T3_TOWERS_DOWN", "radiant", 3)
+
+        if sd.dire_t2_fallen:
+            add("T2_TOWER_FALL", "radiant", sd.dire_t2_fallen)
+            if sd.dire_t2_after == 0:
+                add("ALL_T2_TOWERS_DOWN", "radiant", 3)
+
         return components
 
     def _build_tactical_events(
@@ -525,6 +517,7 @@ class EventDetector:
         candidates.extend(self._fight_candidates(delta, components, mapping))
         candidates.extend(self._comeback_candidates(delta, components, mapping))
         candidates.extend(self._base_pressure_candidates(delta, components, mapping))
+        candidates.extend(self._state_pressure_candidates(delta, mapping))
         candidates.extend(self._objective_conversion_candidates(delta, components, candidates, mapping))
 
         # Bloody-even is research-only and directionless; keep it outside ranking.
@@ -737,28 +730,90 @@ class EventDetector:
 
         for direction, comps in by_dir.items():
             types = {c.component_type for c in comps}
-            source = delta.current.get("data_source")
-            t4_reliable = source != "top_live"
-            if "THRONE_EXPOSED_COMPONENT" in types and t4_reliable:
+            sd = delta.structure_delta
+            if not sd or not sd.valid:
+                continue
+                
+            # THRONE_EXPOSED only when T4 alive goes from >0 to 0
+            rad_exposed = (direction == "dire" and sd.radiant_t4_before > 0 and sd.radiant_t4_after == 0)
+            dire_exposed = (direction == "radiant" and sd.dire_t4_before > 0 and sd.dire_t4_after == 0)
+            
+            # Pressure requires same-direction fight/economy pressure
+            pressure_ok = False
+            if delta.kill_diff_delta is not None or delta.networth_delta is not None:
+                signed_kills = delta.kill_diff_delta if direction == "radiant" else -delta.kill_diff_delta
+                signed_nw = delta.networth_delta if direction == "radiant" else -delta.networth_delta
+                if (signed_kills or 0) > 0 or (signed_nw or 0) > 100:
+                    pressure_ok = True
+
+            if rad_exposed or dire_exposed:
                 out.append(self._event_from_components(
                     "THRONE_EXPOSED", direction, delta, mapping, comps,
-                    previous_value=comps[0].previous_value, current_value=comps[0].current_value,
-                    event_delta=max((abs(float(c.delta or 0)) for c in comps), default=0.0),
-                    severity="high",
+                    previous_value=">0", current_value="0",
+                    event_delta=1.0, severity="high",
                 ))
-            elif ({"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"} & types) and t4_reliable:
+            elif ({"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"} & types):
+                # BASE_PRESSURE_T4: only when T4 already exposed + pressure
+                t4_already_exposed = (direction == "dire" and sd.radiant_t4_after == 0) or \
+                                     (direction == "radiant" and sd.dire_t4_after == 0)
+                if t4_already_exposed and pressure_ok:
+                    out.append(self._event_from_components(
+                        "BASE_PRESSURE_T4", direction, delta, mapping, comps,
+                        previous_value="exposed", current_value="pressure",
+                        event_delta=1.0, severity="high",
+                    ))
+            elif "ALL_T3_TOWERS_DOWN" in types or "MULTIPLE_T3_TOWERS_DOWN" in types or "T3_TOWER_FALL" in types:
+                # BASE_PRESSURE_T3_COLLAPSE: T3 decrease or all T3 down plus fight/economy pressure
+                t3_all_down = (direction == "dire" and sd.radiant_t3_after == 0) or \
+                               (direction == "radiant" and sd.dire_t3_after == 0)
+                t3_decrease = (direction == "dire" and sd.radiant_t3_fallen > 0) or \
+                               (direction == "radiant" and sd.dire_t3_fallen > 0)
+                               
+                if (t3_decrease or t3_all_down) and pressure_ok:
+                    out.append(self._event_from_components(
+                        "BASE_PRESSURE_T3_COLLAPSE", direction, delta, mapping, comps,
+                        previous_value="t3_vulnerable", current_value="pressure",
+                        event_delta=1.0, severity="high" if t3_all_down else "medium",
+                    ))
+        return out
+
+    def _state_pressure_candidates(self, delta: SnapshotDelta, mapping: dict | None) -> list[DotaEvent]:
+        out: list[DotaEvent] = []
+        ss = delta.current.get("structure_state")
+        if not ss or ss.confidence < 1.0:
+            return []
+
+        for direction in ["radiant", "dire"]:
+            # Pressure requires same-direction fight/economy pressure in this snapshot
+            pressure_ok = False
+            if delta.kill_diff_delta is not None or delta.networth_delta is not None:
+                signed_kills = delta.kill_diff_delta if direction == "radiant" else -delta.kill_diff_delta
+                signed_nw = delta.networth_delta if direction == "radiant" else -delta.networth_delta
+                if (signed_kills or 0) > 0 or (signed_nw or 0) > 200: # Slightly higher threshold for state-polling
+                    pressure_ok = True
+            
+            if not pressure_ok:
+                continue
+
+            # BASE_PRESSURE_T4: T4 already exposed + pressure
+            t4_already_exposed = (direction == "dire" and ss.radiant_t4_alive == 0) or \
+                                 (direction == "radiant" and ss.dire_t4_alive == 0)
+            if t4_already_exposed:
                 out.append(self._event_from_components(
-                    "BASE_PRESSURE_T4", direction, delta, mapping, comps,
-                    previous_value=comps[0].previous_value, current_value=comps[0].current_value,
-                    event_delta=max((abs(float(c.delta or 0)) for c in comps), default=0.0),
-                    severity="high",
+                    "BASE_PRESSURE_T4", direction, delta, mapping, [],
+                    previous_value="exposed", current_value="pressure",
+                    event_delta=1.0, severity="high",
                 ))
-            elif "ALL_T3_TOWERS_DOWN" in types or "MULTIPLE_T3_TOWERS_DOWN" in types:
+                continue # Only one pressure event per side
+
+            # BASE_PRESSURE_T3_COLLAPSE: all T3 down plus fight/economy pressure
+            t3_all_down = (direction == "dire" and ss.radiant_t3_alive == 0) or \
+                           (direction == "radiant" and ss.dire_t3_alive == 0)
+            if t3_all_down:
                 out.append(self._event_from_components(
-                    "BASE_PRESSURE_T3_COLLAPSE", direction, delta, mapping, comps,
-                    previous_value=comps[0].previous_value, current_value=comps[0].current_value,
-                    event_delta=max((abs(float(c.delta or 0)) for c in comps), default=0.0),
-                    severity="high" if "ALL_T3_TOWERS_DOWN" in types else "medium",
+                    "BASE_PRESSURE_T3_COLLAPSE", direction, delta, mapping, [],
+                    previous_value="t3_vulnerable", current_value="pressure",
+                    event_delta=1.0, severity="high",
                 ))
         return out
 
@@ -785,6 +840,22 @@ class EventDetector:
             event_type = _conversion_event_type(tower)
             if event_type is None:
                 continue
+                
+            sd = delta.structure_delta
+            if not sd or not sd.valid:
+                continue
+
+            # OBJECTIVE_CONVERSION_T4 only from actual T4 decrease.
+            if event_type == "OBJECTIVE_CONVERSION_T4":
+                t4_fallen = sd.radiant_t4_fallen if direction == "dire" else sd.dire_t4_fallen
+                if t4_fallen <= 0:
+                    continue
+            
+            # OBJECTIVE_CONVERSION_T3 only from actual T3 decrease.
+            if event_type == "OBJECTIVE_CONVERSION_T3":
+                t3_fallen = sd.radiant_t3_fallen if direction == "dire" else sd.dire_t3_fallen
+                if t3_fallen <= 0:
+                    continue
             strongest_support = max(support, key=lambda e: TACTICAL_PRIORITY.get(e.event_type, 0))
             conv_components = list(tower)
             conv_components.extend(EventComponent(

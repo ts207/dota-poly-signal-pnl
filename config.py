@@ -58,6 +58,22 @@ TRADE_EVENTS = {e.strip() for e in os.getenv("TRADE_EVENTS", DEFAULT_TRADE_EVENT
 ALLOW_CONFIRMATION_ONLY_LIVE_TRADES = os.getenv("ALLOW_CONFIRMATION_ONLY_LIVE_TRADES", "false").lower() in {"1", "true", "yes"}
 LIVE_ATTEMPTS_CSV_PATH = os.getenv("LIVE_ATTEMPTS_CSV_PATH", "logs/live_attempts.csv")
 
+ENABLE_MATCH_WINNER_GAME3_PROXY = os.getenv(
+    "ENABLE_MATCH_WINNER_GAME3_PROXY", "true"
+).lower() in {"1", "true", "yes"}
+
+ENABLE_MATCH_WINNER_RESEARCH = os.getenv(
+    "ENABLE_MATCH_WINNER_RESEARCH", "false"
+).lower() in {"1", "true", "yes"}
+
+ENABLE_MATCH_WINNER_TRADING = os.getenv(
+    "ENABLE_MATCH_WINNER_TRADING", "false"
+).lower() in {"1", "true", "yes"}
+
+SHADOW_TRADES_CSV_PATH = os.getenv(
+    "SHADOW_TRADES_CSV_PATH", "logs/shadow_trades.csv"
+)
+
 # Polling / reconnect
 # NOTE: GetLiveLeagueGames carries a ~120s Valve-imposed broadcast delay.
 # GetTopLiveGame is ~15–30s. The effective arb window is market_lag minus this delay.
@@ -106,21 +122,20 @@ EXIT_LATENCY_EDGE_SEC = int(os.getenv("EXIT_LATENCY_EDGE_SEC", "30"))
 # Fallback EXIT_HORIZON_SEC applies for unknown event types or when 0 (disabled).
 EXIT_HORIZON_SEC   = int(os.getenv("EXIT_HORIZON_SEC",      "120"))
 EXIT_HORIZON_BY_EVENT: dict[str, int] = {
-    "THRONE_EXPOSED":            120,
-    "BASE_PRESSURE_T4":          120,
-    "BASE_PRESSURE_T3_COLLAPSE": 90,
-    "POLL_ULTRA_LATE_FIGHT_FLIP": 120,
-    "POLL_LATE_FIGHT_FLIP":      90,
-    "POLL_STOMP_THROW_CONFIRMED": 90,
-    "POLL_LEAD_FLIP_WITH_KILLS": 90,
-    "POLL_MAJOR_COMEBACK_RECOVERY": 90,
-    "POLL_KILL_BURST_CONFIRMED": 60,
-    "POLL_FIGHT_SWING":          60,
-    "POLL_COMEBACK_RECOVERY":    60,
-    "OBJECTIVE_CONVERSION_T2":   60,
-    "OBJECTIVE_CONVERSION_T3":   90,
-    "OBJECTIVE_CONVERSION_T4":   90,
-    "ML_ARBITRAGE":              120,
+    "POLL_FIGHT_SWING": 15,
+    "POLL_KILL_BURST_CONFIRMED": 20,
+    "POLL_COMEBACK_RECOVERY": 30,
+    "POLL_LATE_FIGHT_FLIP": 45,
+    "POLL_STOMP_THROW_CONFIRMED": 45,
+    "POLL_LEAD_FLIP_WITH_KILLS": 45,
+    "POLL_MAJOR_COMEBACK_RECOVERY": 45,
+    "POLL_ULTRA_LATE_FIGHT_FLIP": 60,
+    "OBJECTIVE_CONVERSION_T3": 60,
+    "OBJECTIVE_CONVERSION_T4": 60,
+    "BASE_PRESSURE_T4": 60,
+    "BASE_PRESSURE_T3_COLLAPSE": 60,
+    "THRONE_EXPOSED": 90,
+    "ML_ARBITRAGE": 60,
 }
 # Safety net: force-close any position that stays open longer than this (game_over missed).
 MAX_HOLD_HOURS     = float(os.getenv("MAX_HOLD_HOURS",      "4"))

@@ -13,12 +13,14 @@ from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
 from signal_engine import EventSignalEngine, apply_probability_move
 from paper_trader import PaperTrader
-from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, RichContextLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger, SignalMarkoutLogger, LiveExitLogger
+from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, RichContextLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger, SignalMarkoutLogger, LiveExitLogger, ShadowTradeLogger
 from mapping import load_valid_mappings
 from event_detector import EventDetector
 from live_executor import LiveExecutor, LiveExitExecutor
 from live_position_store import LivePositionStore, LivePosition
 from live_exit_engine import decide_live_exit
+from market_scope import is_active_strategy_mapping, is_game3_match_proxy
+from shadow_trader import build_shadow_trade, log_shadow_markouts
 from liveleague_features import LiveLeagueContextCache, classify_liveleague_lag
 from mapping_validator import validate_mapping_identity
 from hybrid_nowcast import compute_hybrid_nowcast
@@ -32,7 +34,8 @@ from config import (
     ALLOW_CONFIRMATION_ONLY_LIVE_TRADES, MAX_BOOK_AGE_MS, MIN_EXECUTABLE_EDGE,
     MIN_LAG, MAX_SPREAD, MIN_ASK_SIZE_USD, PAPER_SLIPPAGE_CENTS, PAPER_TRADE_SIZE_USD,
     PRICE_LOOKBACK_SEC, REQUIRE_TOP_LIVE_FOR_SIGNALS, DOTA_FAIR_MODEL_PATH,
-    MIN_ML_EDGE, ML_STRATEGY_ENABLED
+    MIN_ML_EDGE, ML_STRATEGY_ENABLED,
+    ENABLE_MATCH_WINNER_GAME3_PROXY, ENABLE_MATCH_WINNER_RESEARCH
 )
 from sync_markets import sync_markets_to_games, load_markets, write_markets
 from dota_fair_model.inference import load_bundle
@@ -830,7 +833,7 @@ async def steam_loop(
                                         opposing_token = no_token if favored_token_id == yes_token else yes_token
                                         asyncio.create_task(check_live_exits_fn(adverse_token_ids={opposing_token}))
 
-                                if mapping.get("market_type") == "MATCH_WINNER":
+                                if ENABLE_MATCH_WINNER_RESEARCH and mapping.get("market_type") == "MATCH_WINNER":
                                     # Task 4: Match Winner research mode sidecar
                                     try:
                                         m_yes_book = yes_book or {}
@@ -910,13 +913,32 @@ async def steam_loop(
                                                 except Exception:
                                                     pass
 
-                                        match_winner_logger.log_match_signal(row)
+                                        if match_winner_logger:
+                                            match_winner_logger.log_match_signal(row)
                                     except Exception as e:
                                         print(f"Error in MATCH_WINNER sidecar: {e}")
                                         traceback.print_exc()
                                     finally:
-                                        signal["decision"] = "skip"
-                                        signal["reason"] = "research_mode_match_winner"
+                                        # Only force skip if it's NOT a decider Game 3 proxy
+                                        if not is_game3_match_proxy(mapping):
+                                            signal["decision"] = "skip"
+                                            signal["reason"] = "research_mode_match_winner"
+
+                                # Shadow trade logging for MAP_WINNER and Game3 MATCH_WINNER proxies
+                                if tok_id and shadow_logger and mapping.get("market_type") in {"MAP_WINNER", "MATCH_WINNER"}:
+                                    if mapping.get("market_type") == "MAP_WINNER" or is_game3_match_proxy(mapping):
+                                        shadow = build_shadow_trade(
+                                            signal=signal,
+                                            mapping=mapping,
+                                            game=game,
+                                            token_id=tok_id,
+                                            side=tok_side,
+                                        )
+                                        asyncio.create_task(log_shadow_markouts(
+                                            shadow,
+                                            book_store=book_store,
+                                            logger=shadow_logger,
+                                        ))
 
                                 if signal["decision"] == "paper_buy_yes":
                                     candidates.append({
@@ -1189,6 +1211,16 @@ async def main():
     for err in errors:
         print(f"Skipping mapping #{err.index} ({err.name or 'unnamed'}): {err.reason}")
 
+    # Step 1: Filter to active strategy scope
+    mappings = [
+        m for m in mappings
+        if is_active_strategy_mapping(
+            m,
+            enable_match_winner_game3_proxy=ENABLE_MATCH_WINNER_GAME3_PROXY,
+            enable_match_winner_research=ENABLE_MATCH_WINNER_RESEARCH,
+        )
+    ]
+
     if not mappings:
         print("No active mappings yet — bot will keep checking every 60s for live games.")
 
@@ -1212,8 +1244,9 @@ async def main():
     live_exit_executor = LiveExitExecutor() if LIVE_TRADING else None
     live_exit_logger = LiveExitLogger() if LIVE_TRADING else None
     rescue_logger = BookRefreshRescueLogger()
-    match_winner_logger = MatchWinnerSignalLogger(log_dir="logs")
+    match_winner_logger = MatchWinnerSignalLogger(log_dir="logs") if ENABLE_MATCH_WINNER_RESEARCH else None
     signal_markout_logger = SignalMarkoutLogger()
+    shadow_logger = ShadowTradeLogger()
 
     # Collect all background CSV loggers for graceful flush on shutdown
     loggers = [
@@ -1226,9 +1259,11 @@ async def main():
         rich_context_logger,
         source_delay_logger,
         rescue_logger,
-        match_winner_logger,
         signal_markout_logger,
+        shadow_logger,
     ]
+    if match_winner_logger:
+        loggers.append(match_winner_logger)
     if live_logger:
         loggers.append(live_logger)
     if live_exit_logger:
@@ -1307,8 +1342,15 @@ async def main():
                 f"entry={cp.entry_price:.4f} exit={cp.exit_price:.4f} "
                 f"pnl=${cp.pnl_usd:+.2f} hold={cp.hold_sec:.0f}s"
             )
-        if live_position_store:
-            asyncio.create_task(_check_live_exits())
+
+    async def live_exit_loop():
+        """Recurring exit check to avoid task backlog on heavy book traffic."""
+        while True:
+            try:
+                await _check_live_exits()
+            except Exception as e:
+                print(f"Error in live_exit_loop: {e}")
+            await asyncio.sleep(0.5)
 
     if LIVE_TRADING:
         print(f"Starting GUARDED LIVE TEST with {len(mappings)} active mapping(s). $10 hard cap is enforced by LiveExecutor.")
@@ -1317,7 +1359,7 @@ async def main():
 
     try:
         async with aiohttp.ClientSession() as session:
-            await asyncio.gather(
+            tasks = [
                 listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
                 steam_loop(
                     store, trader, signal_logger, event_detector, signal_engine,
@@ -1331,7 +1373,11 @@ async def main():
                     live_exit_logger=live_exit_logger,
                     check_live_exits_fn=_check_live_exits,
                 ),
-            )
+            ]
+            if LIVE_TRADING:
+                tasks.append(live_exit_loop())
+            
+            await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         pass
     finally:

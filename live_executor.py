@@ -154,31 +154,24 @@ def _avg_fill_price(resp: dict[str, Any], default_price: float, filled_usd: floa
 
 
 def _filled_shares_from_sell_response(resp: dict[str, Any], requested_shares: float) -> float:
-    """Best-effort filled-shares extraction for a SELL market order response.
+    """Parse explicit share fills only.
 
-    Polymarket response schemas can differ by client version. For SELL, we want
-    to know exactly how many shares were disposed of.
+    Do not infer SELL closure from ambiguous fields like amountFilled,
+    filledAmount, takingAmount, or makingAmount because those may be USDC.
     """
-    explicit_keys = (
-        "filledShares", "filled_shares", "amountFilled", "filledAmount",
-        "filled", "filled_size", "shares",
+    explicit_share_keys = (
+        "filledShares",
+        "filled_shares",
+        "shares",
+        "matchedShares",
+        "matched_shares",
+        "sizeMatched",
+        "size_matched",
     )
-    for key in explicit_keys:
+    for key in explicit_share_keys:
         value = _to_float(resp.get(key))
         if value is not None and value >= 0:
             return min(value, requested_shares)
-
-    # If no explicit share fields, but we have taking/making, check if one matches shares
-    taking = _to_float(resp.get("takingAmount") or resp.get("taking_amount"))
-    making = _to_float(resp.get("makingAmount") or resp.get("making_amount"))
-    
-    # In a SELL, taking might be USDC and making might be shares, or vice-versa.
-    # We check if either is close to requested_shares.
-    if making is not None and requested_shares * 0.95 <= making <= requested_shares * 1.05:
-        return min(making, requested_shares)
-    if taking is not None and requested_shares * 0.95 <= taking <= requested_shares * 1.05:
-        return min(taking, requested_shares)
-
     return 0.0
 
 

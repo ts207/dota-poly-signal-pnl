@@ -254,3 +254,37 @@ def test_hybrid_fair_override_drives_edge_gate():
     assert result["decision"] == "paper_buy_yes"
     assert result["fair_price"] == 0.62
     assert result["fair_source"] == "hybrid"
+
+def test_structure_confidence_lowers_impact():
+    now_ns = time.time_ns()
+    engine = _engine_with_price(TOKEN_YES, 0.45)
+    
+    event_high = _event("OBJECTIVE_CONVERSION_T3", delta=1)
+    event_high["structure_confidence"] = 1.0
+    
+    res_high = engine.evaluate_cluster(
+        events=[event_high],
+        game=_game(now_ns),
+        mapping=_mapping(),
+        yes_book=_book(now_ns),
+        no_book=None,
+        require_primary=False
+    )
+    
+    event_low = _event("OBJECTIVE_CONVERSION_T3", delta=1)
+    event_low["structure_confidence"] = 0.5
+    
+    res_low = engine.evaluate_cluster(
+        events=[event_low],
+        game=_game(now_ns),
+        mapping=_mapping(),
+        yes_book=_book(now_ns),
+        no_book=None,
+        require_primary=False
+    )
+    
+    assert res_low["expected_move"] < res_high["expected_move"]
+    # Penalty should be logged
+    assert res_low["structure_uncertainty_penalty"] > res_high["structure_uncertainty_penalty"]
+    # Required edge should be higher
+    assert res_low["required_edge"] > res_high["required_edge"]
