@@ -8,7 +8,7 @@ from typing import Iterable
 from config import (
     CSV_LOG_PATH, PAPER_TRADES_CSV_PATH, DOTA_EVENTS_CSV_PATH, BOOK_EVENTS_CSV_PATH,
     LIVE_ATTEMPTS_CSV_PATH, LATENCY_CSV_PATH, LIVE_LEAGUE_RAW_JSONL_PATH,
-    LIVE_LEAGUE_FEATURES_CSV_PATH, SOURCE_DELAY_CSV_PATH,
+    RICH_CONTEXT_CSV_PATH, SOURCE_DELAY_CSV_PATH,
     BOOK_REFRESH_RESCUE_CSV_PATH,
     RUN_ID, CODE_VERSION, CONFIG_HASH,
 )
@@ -96,6 +96,9 @@ class SignalLogger(CsvLogger):
             "market_name", "market_type", "yes_team", "yes_token_id",
             "event_type", "cluster_event_types", "event_direction", "severity",
             "event_tier", "event_is_primary", "event_family", "event_quality",
+            "event_schema_version", "snapshot_gap_sec", "actual_window_sec",
+            "networth_delta", "kill_diff_delta", "total_kills_delta",
+            "networth_delta_per_30s", "kill_diff_delta_per_30s", "source_cadence_quality",
             "token_id", "side",
             "lag", "expected_move", "fair_price", "executable_price", "executable_edge", "remaining_move",
             "fair_source",
@@ -141,6 +144,15 @@ class SignalLogger(CsvLogger):
             "event_is_primary": signal.get("event_is_primary"),
             "event_family": signal.get("event_family"),
             "event_quality": signal.get("event_quality"),
+            "event_schema_version": signal.get("event_schema_version"),
+            "snapshot_gap_sec": signal.get("snapshot_gap_sec"),
+            "actual_window_sec": signal.get("actual_window_sec"),
+            "networth_delta": signal.get("networth_delta"),
+            "kill_diff_delta": signal.get("kill_diff_delta"),
+            "total_kills_delta": signal.get("total_kills_delta"),
+            "networth_delta_per_30s": signal.get("networth_delta_per_30s"),
+            "kill_diff_delta_per_30s": signal.get("kill_diff_delta_per_30s"),
+            "source_cadence_quality": signal.get("source_cadence_quality"),
             "token_id": token_id,
             "side": side,
             "lag": signal.get("lag"),
@@ -268,6 +280,9 @@ class DotaEventLogger(CsvLogger):
             "timestamp_utc", "run_id", "code_version", "config_hash",
             "match_id", "lobby_id", "league_id", "mapping_name", "yes_team", "yes_token_id",
             "event_type", "event_tier", "event_is_primary", "event_family", "event_quality", "event_dedupe_key",
+            "event_schema_version", "snapshot_gap_sec", "actual_window_sec",
+            "networth_delta", "kill_diff_delta", "total_kills_delta",
+            "networth_delta_per_30s", "kill_diff_delta_per_30s", "source_cadence_quality",
             "component_event_types", "component_deltas", "component_window_sec",
             "severity", "game_time_sec", "radiant_team", "dire_team",
             "radiant_lead", "radiant_score", "dire_score", "tower_state",
@@ -407,8 +422,8 @@ class LiveLeagueRawLogger:
             f.write(_json.dumps(row, default=str, sort_keys=True) + "\n")
 
 
-class LiveLeagueFeatureLogger(CsvLogger):
-    def __init__(self, filename: str = LIVE_LEAGUE_FEATURES_CSV_PATH):
+class RichContextLogger(CsvLogger):
+    def __init__(self, filename: str = RICH_CONTEXT_CSV_PATH):
         player_fields = [
             "account_id", "player_name", "hero_id", "kills", "deaths", "assists",
             "last_hits", "denies", "gold", "level", "gpm", "xpm", "net_worth",
@@ -471,11 +486,33 @@ class LiveLeagueFeatureLogger(CsvLogger):
             "liveleague_age_ms",
             "game_time_lag_sec",
             "liveleague_context_status",
+            "realtime_stats_age_sec",
+            "delayed_game_time_sec",
         ] + player_headers)
+        # (match_id, delayed_game_time_sec) already written — deduplicates Valve update cadence
+        self._seen: dict[str, int] = {}
 
-    def log_features(self, features: dict):
-        row = {key: features.get(key) for key in self.headers}
+    def log_rich_context(self, game: dict):
+        match_id = str(game.get("match_id") or "")
+        # Prefer realtime_game_time_sec if available, fallback to liveleague
+        delayed_gt = game.get("realtime_game_time_sec") or game.get("delayed_game_time_sec") or game.get("liveleague_game_time_sec")
+        
+        if not match_id or delayed_gt is None:
+            return
+        
+        # Deduplicate to avoid bloating the log with identical rows between Valve updates
+        if self._seen.get(match_id) == delayed_gt:
+            return
+        self._seen[match_id] = delayed_gt
+
+        row = {key: game.get(key) for key in self.headers}
         row["timestamp_utc"] = utc_now_iso()
+        # If received_at_ns isn't explicitly in game, it might be in liveleague_received_at_ns
+        if row.get("received_at_ns") is None:
+            row["received_at_ns"] = game.get("liveleague_received_at_ns")
+        if row.get("game_time_sec") is None:
+             row["game_time_sec"] = game.get("liveleague_game_time_sec")
+
         self.append(row)
 
 

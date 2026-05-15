@@ -308,7 +308,7 @@ class LiveLeagueContextCache:
     def get(self, match_id: str) -> dict | None:
         return self.by_match_id.get(str(match_id))
 
-    def attach_to_game(self, game: dict, feature_logger=None) -> dict:
+    def attach_to_game(self, game: dict) -> dict:
         """Attach cached LiveLeague context to a TopLive game dict as metadata.
 
         Does NOT modify expected_move, edge, sizing, or live entry decisions.
@@ -354,13 +354,6 @@ class LiveLeagueContextCache:
 
         derived = compute_derived_events(ctx, game_gt)
         game["liveleague_derived_events"] = derived
-
-        if feature_logger is not None:
-            log_row = dict(ctx)
-            log_row["liveleague_age_ms"] = game.get("liveleague_age_ms")
-            log_row["game_time_lag_sec"] = game.get("game_time_lag_sec")
-            log_row["liveleague_context_status"] = game.get("liveleague_context_status")
-            feature_logger.log_features(log_row)
 
         return game
 

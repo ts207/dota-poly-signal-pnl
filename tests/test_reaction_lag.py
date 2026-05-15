@@ -6,7 +6,7 @@ def test_reaction_lag_expected_ask_move():
         "timestamp_utc": "2026-01-01T00:00:10.000+00:00",
         "yes_token_id": "YES",
         "mapping_name": "m",
-        "event_type": "LEAD_SWING_30S",
+        "event_type": "POLL_FIGHT_SWING",
         "severity": "medium",
         "game_time_sec": "600",
         "direction": "radiant",

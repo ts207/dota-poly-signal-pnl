@@ -7,14 +7,14 @@ Paper by default. Optional guarded live-path test exists and is disabled by defa
 ## New in latest update
 
 - **Latency Observability:** Dedicated `logs/latency.csv` decomposes the full path from Steam snapshot receipt → event detection → signal evaluation → order attempt.
-- **Structure Events:** Added `THRONE_EXPOSED`, `ALL_T3_TOWERS_DOWN`, `T3_PLUS_T4_CHAIN`, and `MULTI_STRUCTURE_COLLAPSE` with specific suppressions and max-fill caps.
+- **Cadence-aware events:** Fixed `30s/60s` primary events are retired. Events now use actual TopLive snapshot gaps and emit tactical `POLL_*`, `OBJECTIVE_CONVERSION_*`, and `BASE_PRESSURE_*` names with `event_schema_version=cadence_v1`.
 - **Survival Analysis:** `reaction_lag.py` now produces `logs/stale_ask_survival.csv`, estimating how many seconds an executable price persisted after a signal.
 - **Pressure Metadata:** Dota events now include `base_pressure_score`, `fight_pressure_score`, `economic_pressure_score`, and `conversion_score`.
 - **Bug Fixes:** Corrected latency-row cluster mapping and synchronized signal evaluation timestamps.
 
 ## Note on Live Status
 
-New structure events (`THRONE_EXPOSED`, etc.) are **paper-active by default**. To enable them for live trading, add them to `TRADE_EVENTS` in your `.env`.
+Live trading is disabled by default. When enabled, the default live allowlist keeps Tier A and Tier B primary events enabled. Live execution still rejects non-`cadence_v1`, stale-gap, invalid-gap, low-quality, research, unknown, and retired events.
 
 ## Setup
 
@@ -176,8 +176,11 @@ MIN_LAG=0.08 \
 MAX_SPREAD=0.06 \
 ALLOW_GAME_OVER_ONLY=false \
 ALLOW_EVENT_TRADES=true \
-TRADE_EVENTS=THRONE_EXPOSED,SECOND_T4_TOWER_FALL,OBJECTIVE_CONVERSION_T4,T3_PLUS_T4_CHAIN \
-DISABLE_STRUCTURE_TRADES=true \
+TRADE_EVENTS=BASE_PRESSURE_T3_COLLAPSE,BASE_PRESSURE_T4,OBJECTIVE_CONVERSION_T3,OBJECTIVE_CONVERSION_T4,POLL_COMEBACK_RECOVERY,POLL_FIGHT_SWING,POLL_KILL_BURST_CONFIRMED,POLL_LATE_FIGHT_FLIP,POLL_LEAD_FLIP_WITH_KILLS,POLL_MAJOR_COMEBACK_RECOVERY,POLL_STOMP_THROW_CONFIRMED,POLL_ULTRA_LATE_FIGHT_FLIP,THRONE_EXPOSED \
+DISABLE_STRUCTURE_TRADES=false \
+LIVE_REQUIRE_CADENCE_SCHEMA=true \
+LIVE_ALLOWED_CADENCE_QUALITIES=direct,normal \
+LIVE_MIN_EVENT_QUALITY=0.60 \
 DEFAULT_MAX_FILL_PRICE=0.80 \
 PRICE_LOOKBACK_SEC=10 \
 MAX_BOOK_AGE_MS=1000 \
@@ -213,8 +216,12 @@ Safety behavior:
 - `MAX_TRADE_USD` defaults to $1.
 - `MAX_OPEN_POSITIONS=1` means one successful fill stops further live attempts in
   the same process unless you add live exits or restart intentionally.
-- `DISABLE_STRUCTURE_TRADES=true` blocks tower-only/structure-triggered trades for
-  the first run.
+- `DISABLE_STRUCTURE_TRADES=false` keeps Tier A/B objective and base-pressure
+  events enabled. Set it to `true` only if you want to block all objective/base
+  pressure entries and trade fight-only events.
+- `LIVE_REQUIRE_CADENCE_SCHEMA=true` requires `event_schema_version=cadence_v1`.
+- `LIVE_ALLOWED_CADENCE_QUALITIES=direct,normal` blocks stale and invalid poll gaps.
+- `LIVE_MIN_EVENT_QUALITY=0.60` blocks weak event clusters before order submission.
 - No GTC resting orders are sent by this module.
 
 Credential environment variables are read as:
@@ -233,14 +240,15 @@ eligibility are valid.
 
 ### Event/strategy model notes
 
-The signal model separates raw events from higher-quality composite events:
+The signal model separates raw components from higher-quality tactical events:
 
 - `OBJECTIVE_CONVERSION_T3` / `OBJECTIVE_CONVERSION_T4`: a high-ground/T4 structure falls in the same short window as a same-direction kill burst, net-worth swing, comeback, or throw event. These are preferred over tower-only entries because they indicate fight-to-objective conversion.
 - `OBJECTIVE_CONVERSION_T2`: available for paper research, but not in the default live-test allowlist.
-- Raw structure-only events are damped by the signal engine unless they also have same-direction support.
+- Raw structure-only events are components. Primary structure signals are `BASE_PRESSURE_T3_COLLAPSE`, `BASE_PRESSURE_T4`, and `THRONE_EXPOSED` when source reliability permits.
+- `POLL_FIGHT_SWING`, `POLL_KILL_BURST_CONFIRMED`, `POLL_LEAD_FLIP_WITH_KILLS`, recovery, throw, late-fight, and ultra-late flip events are based on actual observed snapshot gaps rather than idealized windows.
 - Entries now require both `executable_edge >= required_edge` and `remaining_move >= MIN_LAG`, so paper signals are closer to the guarded live executor behavior.
 
 
 ### v7 strategy hardening notes
 
-The default live allowlist now excludes confirmation-only triggers unless `ALLOW_CONFIRMATION_ONLY_LIVE_TRADES=true` is explicitly set. New `MULTIPLE_T2_TOWERS_DOWN` and `ALL_T2_TOWERS_DOWN` events are map-control context signals; they are used for scoring and edge buffers, not as default standalone live triggers. Live execution also respects the signal's event-specific `max_fill_price`, so high-confidence T3/T4 conversion signals are not accidentally blocked by the generic default fill cap.
+The default live allowlist includes Tier A/B primary events and excludes research/retired triggers. Live execution also respects the signal's event-specific `max_fill_price`, cadence quality, event schema, and event quality, so small-capital tests do not accidentally trade stale or retired event names.

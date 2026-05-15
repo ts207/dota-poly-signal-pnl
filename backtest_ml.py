@@ -36,8 +36,6 @@ from dota_fair_model.schemas import phase_for_duration
 from event_detector import EventDetector
 from signal_engine import ACTIVE_EVENTS, apply_probability_move
 from config import (
-    EVENT_LEAD_SWING_30S,
-    EVENT_LEAD_SWING_60S,
     DOTA_FAIR_MODEL_PATH,
     PRICE_LOOKBACK_SEC,
     MAX_SPREAD,
@@ -45,14 +43,14 @@ from config import (
     MIN_EXECUTABLE_EDGE,
     PAPER_SLIPPAGE_CENTS,
 )
-from backtest import SEGMENTS
+from backtest import SEGMENTS, _scale_expected_move
 
 from hybrid_nowcast import compute_hybrid_nowcast
 
 PAPER_SIZE_USD = 25.0
 
 EVENT_EXPECTED_MOVE = {name: spec.base for name, spec in ACTIVE_EVENTS.items()}
-_HIGH_SEVERITY_ONLY = frozenset({"LEAD_SWING_30S", "LEAD_SWING_60S"})
+_HIGH_SEVERITY_ONLY = frozenset()
 
 
 @dataclass
@@ -357,21 +355,7 @@ def run_backtest_ml(
                 if ts < cooldown_until_ms.get((direction, evt.event_type), 0):
                     continue
 
-                expected_move = EVENT_EXPECTED_MOVE[evt.event_type]
-
-                if evt.delta is not None:
-                    if evt.event_type in ("LEAD_SWING_30S", "LEAD_SWING_60S"):
-                        threshold = EVENT_LEAD_SWING_30S if "30S" in evt.event_type else EVENT_LEAD_SWING_60S
-                        expected_move *= min(abs(evt.delta) / threshold, 3.0)
-                    elif evt.event_type == "COMEBACK":
-                        expected_move *= min(abs(evt.delta) / 3000, 2.0)
-                    elif evt.event_type == "KILL_CONFIRMED_LEAD_SWING":
-                        expected_move *= min(abs(evt.delta) / 2500, 2.0)
-                    elif evt.event_type in ("KILL_BURST_30S", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE"):
-                        expected_move *= min(abs(evt.delta) / 5, 2.0)
-                    elif evt.event_type in ("T2_TOWER_FALL", "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN", "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"):
-                        if evt.delta > 1:
-                            expected_move *= min(float(evt.delta), 2.0)
+                expected_move = _scale_expected_move(evt.event_type, EVENT_EXPECTED_MOVE[evt.event_type], evt.delta)
 
                 if direction == "radiant":
                     token_ticks = rad_ticks

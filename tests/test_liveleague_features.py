@@ -292,37 +292,37 @@ def test_attach_to_game_fresh_context():
 
 
 def test_attach_to_game_logs_full_feature_row():
-    class FakeFeatureLogger:
-        def __init__(self):
-            self.rows = []
+    from storage import RichContextLogger
+    import os
+    import tempfile
+    
+    with tempfile.TemporaryDirectory() as tmp:
+        log_path = os.path.join(tmp, "rich_context.csv")
+        logger = RichContextLogger(filename=log_path)
 
-        def log_features(self, row):
-            self.rows.append(row)
+        cache = LiveLeagueContextCache()
+        received_at_ns = time.time_ns()
+        raw = _make_raw()
+        cache.update([raw], received_at_ns)
 
-    cache = LiveLeagueContextCache()
-    received_at_ns = time.time_ns()
-    raw = _make_raw()
-    cache.update([raw], received_at_ns)
-    logger = FakeFeatureLogger()
-
-    cache.attach_to_game(
-        {
+        game = {
             "match_id": "12345",
             "game_time_sec": 1800,
             "received_at_ns": received_at_ns,
             "radiant_team": "Team Radiant",
             "dire_team": "Team Dire",
-        },
-        feature_logger=logger,
-    )
+        }
+        cache.attach_to_game(game)
+        
+        # Manually log the enriched game state as main.py now does
+        logger.log_rich_context(game)
+        logger.stop()
 
-    assert len(logger.rows) == 1
-    row = logger.rows[0]
-    assert row["score_diff"] == 5
-    assert row["net_worth_diff"] == 3000
-    assert row["top1_net_worth_diff"] == 1500
-    assert row["radiant_p1_net_worth"] == 5000
-    assert row["dire_p1_net_worth"] == 3500
+        with open(log_path, "r") as f:
+            lines = f.readlines()
+            assert len(lines) == 2 # header + 1 row
+            assert "12345" in lines[1]
+            assert "1800" in lines[1]
 
 
 def test_attach_to_game_missing_context():

@@ -19,8 +19,8 @@ class FakeLiveClient:
 
 def _signal(**overrides):
     base = {
-        "event_type": "ULTRA_LATE_WIPE",
-        "cluster_event_types": "ULTRA_LATE_WIPE",
+        "event_type": "POLL_ULTRA_LATE_FIGHT_FLIP",
+        "cluster_event_types": "POLL_ULTRA_LATE_FIGHT_FLIP",
         "event_direction": "radiant",
         "token_id": "TOKYES",
         "side": "YES",
@@ -31,6 +31,9 @@ def _signal(**overrides):
         "spread": 0.03,
         "book_age_ms": 100,
         "steam_age_ms": 100,
+        "event_schema_version": "cadence_v1",
+        "source_cadence_quality": "normal",
+        "event_quality": 0.75,
     }
     base.update(overrides)
     return base
@@ -90,15 +93,66 @@ async def test_live_executor_sends_capped_fak_buy():
 
 
 @pytest.mark.asyncio
+async def test_live_executor_allows_tier_b_event_by_default():
+    client = FakeLiveClient()
+    executor = LiveExecutor(client=client)
+    attempt = await executor.try_buy(
+        signal=_signal(event_type="POLL_FIGHT_SWING", cluster_event_types="POLL_FIGHT_SWING"),
+        mapping=_mapping(),
+        game=_game(),
+        book_store=_book_store(),
+    )
+    assert attempt.order_status == "matched"
+    assert attempt.submitted_size_usd == 1
+
+
+@pytest.mark.asyncio
 async def test_live_executor_rejects_tower_trade_when_disabled(monkeypatch):
     monkeypatch.setattr("live_executor.DISABLE_STRUCTURE_TRADES", True)
     executor = LiveExecutor(client=FakeLiveClient())
     attempt = await executor.try_buy(
-        signal=_signal(event_type="T3_TOWER_FALL", cluster_event_types="T3_TOWER_FALL"),
+        signal=_signal(event_type="BASE_PRESSURE_T3_COLLAPSE", cluster_event_types="BASE_PRESSURE_T3_COLLAPSE"),
         mapping=_mapping(), game=_game(), book_store=_book_store(),
     )
     assert attempt.order_status == "rejected_precheck"
     assert attempt.reason_if_rejected == "structure_trade_disabled"
+
+
+@pytest.mark.asyncio
+async def test_live_executor_rejects_non_cadence_or_stale_quality_events(monkeypatch):
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"POLL_ULTRA_LATE_FIGHT_FLIP"})
+    executor = LiveExecutor(client=FakeLiveClient())
+    missing_schema = await executor.try_buy(
+        signal=_signal(event_schema_version=None),
+        mapping=_mapping(),
+        game=_game(),
+        book_store=_book_store(),
+    )
+    assert missing_schema.order_status == "rejected_precheck"
+    assert missing_schema.reason_if_rejected == "missing_cadence_event_schema"
+
+    stale = await executor.try_buy(
+        signal=_signal(source_cadence_quality="stale_gap"),
+        mapping=_mapping(),
+        game=_game(),
+        book_store=_book_store(),
+    )
+    assert stale.order_status == "rejected_precheck"
+    assert stale.reason_if_rejected == "cadence_quality_not_live_allowed"
+
+
+@pytest.mark.asyncio
+async def test_live_executor_rejects_low_quality_event(monkeypatch):
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"POLL_ULTRA_LATE_FIGHT_FLIP"})
+    executor = LiveExecutor(client=FakeLiveClient())
+    attempt = await executor.try_buy(
+        signal=_signal(event_quality=0.2),
+        mapping=_mapping(),
+        game=_game(),
+        book_store=_book_store(),
+    )
+    assert attempt.order_status == "rejected_precheck"
+    assert attempt.reason_if_rejected == "event_quality_too_low"
 
 
 @pytest.mark.asyncio
@@ -181,11 +235,12 @@ async def test_live_executor_rejects_mapping_confidence_below_one():
 
 @pytest.mark.asyncio
 async def test_live_executor_rejects_tier_c_by_default(monkeypatch):
-    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"T2_TOWER_FALL"})
+    monkeypatch.setattr("live_executor.TRADE_EVENTS", {"OBJECTIVE_CONVERSION_T2"})
     monkeypatch.setattr("live_executor.ALLOW_CONFIRMATION_ONLY_LIVE_TRADES", False)
+    monkeypatch.setattr("live_executor.DISABLE_STRUCTURE_TRADES", False)
     executor = LiveExecutor(client=FakeLiveClient())
     attempt = await executor.try_buy(
-        signal=_signal(event_type="T2_TOWER_FALL", cluster_event_types="T2_TOWER_FALL"),
+        signal=_signal(event_type="OBJECTIVE_CONVERSION_T2", cluster_event_types="OBJECTIVE_CONVERSION_T2"),
         mapping=_mapping(),
         game=_game(),
         book_store=_book_store(),

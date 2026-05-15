@@ -15,7 +15,6 @@ from config import (
     MAX_BOOK_AGE_MS, MAX_SPREAD, MIN_LAG, MIN_EXECUTABLE_EDGE,
     PRICE_LOOKBACK_SEC, DEFAULT_MAX_FILL_PRICE,
     MIN_ASK_SIZE_USD, PAPER_TRADE_SIZE_USD, PAPER_SLIPPAGE_CENTS,
-    EVENT_LEAD_SWING_30S, EVENT_LEAD_SWING_60S,
 )
 
 
@@ -29,75 +28,36 @@ class EventSpec:
 # Final fast-API event model. Ancient/game-over is intentionally NOT here:
 # game_over/Ancient state changes are terminal handlers, not probability signals.
 ACTIVE_EVENTS: dict[str, EventSpec] = {
-    # Composite events are emitted when a structure falls in the same short
-    # window as a same-direction kill/networth swing. They score above raw
-    # structure events because the objective was converted from pressure, not
-    # merely taken by split-push noise.
     "OBJECTIVE_CONVERSION_T4":   EventSpec(0.36, 0.65, 2.0),
     "OBJECTIVE_CONVERSION_T3":   EventSpec(0.18, 0.38, 5.0),
     "OBJECTIVE_CONVERSION_T2":   EventSpec(0.075, 0.16, 8.0),
 
     "THRONE_EXPOSED":            EventSpec(0.35, 0.70, 1.5),
-    "SECOND_T4_TOWER_FALL":      EventSpec(0.32, 0.65, 2.0),
-    "FIRST_T4_TOWER_FALL":       EventSpec(0.22, 0.48, 3.0),
-    "T3_PLUS_T4_CHAIN":          EventSpec(0.28, 0.55, 3.0),
-    "MULTI_STRUCTURE_COLLAPSE":  EventSpec(0.22, 0.45, 4.0),
-    "ULTRA_LATE_WIPE":           EventSpec(0.22, 0.48, 4.0),
-    "ULTRA_LATE_WIPE_CONFIRMED": EventSpec(0.24, 0.52, 4.0),
-    "LATE_GAME_WIPE":            EventSpec(0.15, 0.36, 5.0),
-    "STOMP_THROW":               EventSpec(0.14, 0.36, 10.0),
-    "STOMP_THROW_WITH_OBJECTIVE_RISK": EventSpec(0.18, 0.40, 8.0),
-    "LATE_MAJOR_COMEBACK_REPRICE": EventSpec(0.16, 0.36, 8.0),
-    "CHAINED_LATE_FIGHT_RECOVERY": EventSpec(0.14, 0.32, 8.0),
-    "LATE_ECONOMIC_CRASH":       EventSpec(0.13, 0.30, 8.0),
-    "ALL_T3_TOWERS_DOWN":        EventSpec(0.18, 0.40, 5.0),
-    "MULTIPLE_T3_TOWERS_DOWN":   EventSpec(0.15, 0.30, 7.0),
-    "T3_TOWER_FALL":             EventSpec(0.09, 0.22, 7.0),
-    "MAJOR_COMEBACK":            EventSpec(0.15, 0.32, 18.0),
-    "MAJOR_COMEBACK_RECOVERY_60S": EventSpec(0.12, 0.28, 10.0),
-    "COMEBACK_RECOVERY_60S":     EventSpec(0.075, 0.18, 10.0),
-    "EXTREME_LEAD_SWING_30S":   EventSpec(0.12, 0.28, 10.0),
-    "KILL_CONFIRMED_LEAD_SWING": EventSpec(0.10, 0.24, 8.0),
-    "TEAMFIGHT_SWING_30S":       EventSpec(0.085, 0.18, 6.0),
-    "LEAD_SWING_60S":            EventSpec(0.05, 0.12, 15.0),
-    "LEAD_SWING_30S":            EventSpec(0.07, 0.16, 8.0),
-    "KILL_BURST_30S":            EventSpec(0.06, 0.15, 4.0),
+    "BASE_PRESSURE_T4":          EventSpec(0.24, 0.50, 3.0),
+    "BASE_PRESSURE_T3_COLLAPSE": EventSpec(0.14, 0.32, 6.0),
 
-    # Confirmation / lower-confidence events. main.py uses cluster scoring and
-    "T2_TOWER_FALL":             EventSpec(0.035, 0.08, 10.0),
-    "COMEBACK":                  EventSpec(0.040, 0.12, 12.0),
-    "FIGHT_TO_GOLD_CONFIRM_30S": EventSpec(0.050, 0.12, 6.0),
-    # Map-control context only: useful as support for sizing/edge, not a standalone live trigger.
-    "MULTIPLE_T2_TOWERS_DOWN":   EventSpec(0.055, 0.12, 8.0),
-    "ALL_T2_TOWERS_DOWN":        EventSpec(0.050, 0.12, 15.0),
+    "POLL_ULTRA_LATE_FIGHT_FLIP": EventSpec(0.24, 0.52, 4.0),
+    "POLL_STOMP_THROW_CONFIRMED": EventSpec(0.16, 0.36, 8.0),
+    "POLL_LATE_FIGHT_FLIP":       EventSpec(0.15, 0.36, 5.0),
+    "POLL_LEAD_FLIP_WITH_KILLS":  EventSpec(0.13, 0.30, 7.0),
+    "POLL_MAJOR_COMEBACK_RECOVERY": EventSpec(0.12, 0.28, 10.0),
+    "POLL_KILL_BURST_CONFIRMED":  EventSpec(0.10, 0.24, 6.0),
+    "POLL_FIGHT_SWING":           EventSpec(0.085, 0.18, 6.0),
+    "POLL_COMEBACK_RECOVERY":     EventSpec(0.075, 0.18, 10.0),
 }
 
 PRIMARY_TRADE_EVENTS = set(TIER_A_EVENTS | TIER_B_EVENTS)
 
 SUPPRESSIONS: dict[str, set[str]] = {
-    "OBJECTIVE_CONVERSION_T4": {"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"},
-    "OBJECTIVE_CONVERSION_T3": {"T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN"},
-    "OBJECTIVE_CONVERSION_T2": {"T2_TOWER_FALL", "MULTIPLE_T2_TOWERS_DOWN", "ALL_T2_TOWERS_DOWN"},
-    "ULTRA_LATE_WIPE": {"LATE_GAME_WIPE", "KILL_BURST_30S"},
-    "THRONE_EXPOSED": {"SECOND_T4_TOWER_FALL", "FIRST_T4_TOWER_FALL"},
-    "SECOND_T4_TOWER_FALL": {"FIRST_T4_TOWER_FALL"},
-    "T3_PLUS_T4_CHAIN": {"FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL", "THRONE_EXPOSED",
-                          "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN", "ALL_T3_TOWERS_DOWN"},
-    "ALL_T3_TOWERS_DOWN": {"MULTIPLE_T3_TOWERS_DOWN", "T3_TOWER_FALL"},
-    "MULTI_STRUCTURE_COLLAPSE": {"T2_TOWER_FALL", "T3_TOWER_FALL", "FIRST_T4_TOWER_FALL"},
-    "MAJOR_COMEBACK": {"COMEBACK"},
-    "MAJOR_COMEBACK_RECOVERY_60S": {"COMEBACK_RECOVERY_60S"},
-    "LATE_MAJOR_COMEBACK_REPRICE": {"MAJOR_COMEBACK", "MAJOR_COMEBACK_RECOVERY_60S", "COMEBACK", "COMEBACK_RECOVERY_60S", "LEAD_SWING_60S"},
-    "CHAINED_LATE_FIGHT_RECOVERY": {"KILL_CONFIRMED_LEAD_SWING", "LEAD_SWING_60S", "KILL_BURST_30S"},
-    "LATE_ECONOMIC_CRASH": {"LEAD_SWING_60S", "LEAD_SWING_30S", "EXTREME_LEAD_SWING_30S"},
-    "ULTRA_LATE_WIPE_CONFIRMED": {"ULTRA_LATE_WIPE", "LATE_GAME_WIPE", "KILL_BURST_30S"},
-    "STOMP_THROW_WITH_OBJECTIVE_RISK": {"STOMP_THROW", "KILL_BURST_30S"},
-    "FIGHT_TO_GOLD_CONFIRM_30S": {"KILL_CONFIRMED_LEAD_SWING", "KILL_BURST_30S"},
-    "KILL_CONFIRMED_LEAD_SWING": {"TEAMFIGHT_SWING_30S"},
-    "KILL_BURST_30S": {"TEAMFIGHT_SWING_30S"},
-    "MULTIPLE_T3_TOWERS_DOWN": {"T3_TOWER_FALL"},
-    "ALL_T2_TOWERS_DOWN": {"MULTIPLE_T2_TOWERS_DOWN", "T2_TOWER_FALL"},
-    "MULTIPLE_T2_TOWERS_DOWN": {"T2_TOWER_FALL"},
+    "OBJECTIVE_CONVERSION_T4": {"BASE_PRESSURE_T4", "BASE_PRESSURE_T3_COLLAPSE", "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T2"},
+    "THRONE_EXPOSED": {"BASE_PRESSURE_T4", "BASE_PRESSURE_T3_COLLAPSE"},
+    "OBJECTIVE_CONVERSION_T3": {"BASE_PRESSURE_T3_COLLAPSE", "OBJECTIVE_CONVERSION_T2"},
+    "POLL_ULTRA_LATE_FIGHT_FLIP": {"POLL_LATE_FIGHT_FLIP", "POLL_KILL_BURST_CONFIRMED", "POLL_FIGHT_SWING"},
+    "POLL_STOMP_THROW_CONFIRMED": {"POLL_KILL_BURST_CONFIRMED", "POLL_FIGHT_SWING", "POLL_COMEBACK_RECOVERY"},
+    "POLL_LATE_FIGHT_FLIP": {"POLL_KILL_BURST_CONFIRMED", "POLL_FIGHT_SWING"},
+    "POLL_LEAD_FLIP_WITH_KILLS": {"POLL_KILL_BURST_CONFIRMED", "POLL_FIGHT_SWING", "POLL_COMEBACK_RECOVERY"},
+    "POLL_MAJOR_COMEBACK_RECOVERY": {"POLL_COMEBACK_RECOVERY"},
+    "POLL_KILL_BURST_CONFIRMED": {"POLL_FIGHT_SWING"},
 }
 
 # Event-specific safety rails. Real acceptance still comes from fair_price - ask;
@@ -107,30 +67,16 @@ _EVENT_MAX_FILL: dict[str, float] = {
     "OBJECTIVE_CONVERSION_T3": 0.88,
     "OBJECTIVE_CONVERSION_T2": 0.78,
     "THRONE_EXPOSED": 0.97,
-    "SECOND_T4_TOWER_FALL": 0.96,
-    "FIRST_T4_TOWER_FALL": 0.93,
-    "T3_PLUS_T4_CHAIN": 0.93,
-    "MULTI_STRUCTURE_COLLAPSE": 0.90,
-    "ULTRA_LATE_WIPE": 0.92,
-    "ULTRA_LATE_WIPE_CONFIRMED": 0.88,
-    "LATE_GAME_WIPE": 0.88,
-    "STOMP_THROW": 0.88,
-    "STOMP_THROW_WITH_OBJECTIVE_RISK": 0.80,
-    "LATE_MAJOR_COMEBACK_REPRICE": 0.70,
-    "CHAINED_LATE_FIGHT_RECOVERY": 0.75,
-    "LATE_ECONOMIC_CRASH": 0.75,
-    "ALL_T3_TOWERS_DOWN": 0.87,
-    "MULTIPLE_T3_TOWERS_DOWN": 0.85,
-    "MAJOR_COMEBACK": 0.85,
-    "MAJOR_COMEBACK_RECOVERY_60S": 0.82,
-    "COMEBACK_RECOVERY_60S": 0.80,
-    "FIGHT_TO_GOLD_CONFIRM_30S": 0.80,
-    "KILL_CONFIRMED_LEAD_SWING": 0.85,
-    "TEAMFIGHT_SWING_30S": 0.82,
-    "KILL_BURST_30S": 0.82,
-    "LEAD_SWING_30S": 0.80,
-    "MULTIPLE_T2_TOWERS_DOWN": 0.78,
-    "T3_TOWER_FALL": 0.82,
+    "BASE_PRESSURE_T4": 0.92,
+    "BASE_PRESSURE_T3_COLLAPSE": 0.86,
+    "POLL_ULTRA_LATE_FIGHT_FLIP": 0.90,
+    "POLL_STOMP_THROW_CONFIRMED": 0.82,
+    "POLL_LATE_FIGHT_FLIP": 0.86,
+    "POLL_LEAD_FLIP_WITH_KILLS": 0.84,
+    "POLL_MAJOR_COMEBACK_RECOVERY": 0.82,
+    "POLL_KILL_BURST_CONFIRMED": 0.84,
+    "POLL_FIGHT_SWING": 0.82,
+    "POLL_COMEBACK_RECOVERY": 0.80,
 }
 
 MIN_FILL_PRICE = 0.15
@@ -138,13 +84,6 @@ MIN_GAME_TIME_SEC = 5 * 60
 MAX_SIZE_MULTIPLIER = 3.0
 _HISTORY_MAXLEN = 300
 
-_LEAD_SWING_TYPES = frozenset({"LEAD_SWING_30S", "LEAD_SWING_60S", "EXTREME_LEAD_SWING_30S"})
-_LEAD_SWING_THRESHOLDS = {"LEAD_SWING_30S": EVENT_LEAD_SWING_30S, "LEAD_SWING_60S": EVENT_LEAD_SWING_60S, "EXTREME_LEAD_SWING_30S": EVENT_LEAD_SWING_30S * 3}
-# Keep lead swings high-severity-only when evaluated as standalone signals.
-# Standalone lead swings still need high severity in live mode, but we allow
-# medium in paper/shadow mode for analysis.
-_HIGH_SEVERITY_ONLY = frozenset({"LEAD_SWING_30S", "LEAD_SWING_60S", "EXTREME_LEAD_SWING_30S"})
-_KILL_CONFIRMED_NW_THRESHOLD = 2500
 _KILL_BURST_MIN = 3
 
 
@@ -198,29 +137,25 @@ def apply_probability_move(anchor_price: float, impact_cents: float) -> float:
     return _clip_probability(_sigmoid(_logit(anchor_price) + impact_cents * 4.0))
 
 
-def _dynamic_lead_swing_threshold(event_type: str, game_time_sec: int | None) -> int:
-    minute = (game_time_sec or 0) / 60.0
-    if event_type == "LEAD_SWING_30S":
-        if minute < 20:
-            return 1500
-        if minute < 35:
-            return 2500
-        if minute < 50:
-            return 4000
-        return 6000
-    if minute < 20:
-        return 2000
-    if minute < 35:
-        return 3500
-    if minute < 50:
-        return 5000
-    return 7500
-
-
 def _event_attr(event: Any, key: str, default: Any = None) -> Any:
     if isinstance(event, dict):
         return event.get(key, default)
     return getattr(event, key, default)
+
+
+def _cadence_signal_metadata(event: Any) -> dict[str, Any]:
+    fields = (
+        "event_schema_version",
+        "snapshot_gap_sec",
+        "actual_window_sec",
+        "networth_delta",
+        "kill_diff_delta",
+        "total_kills_delta",
+        "networth_delta_per_30s",
+        "kill_diff_delta_per_30s",
+        "source_cadence_quality",
+    )
+    return {field: _event_attr(event, field) for field in fields}
 
 
 def _event_quality_score(events: Iterable[Any]) -> float:
@@ -424,13 +359,6 @@ class EventSignalEngine:
                 "event_is_primary": event_is_primary(primary_event_type),
             }
 
-        # Standalone lead swings still need high severity.
-        if not require_primary:
-            for e in events:
-                et = _event_attr(e, "event_type")
-                if et in _HIGH_SEVERITY_ONLY and _event_attr(e, "severity", "") != "high":
-                    return {"decision": "skip", "reason": "severity_too_low"}
-
         market_type = mapping.get("market_type")
         if market_type not in ("MAP_WINNER", "MATCH_WINNER"):
             return {"decision": "skip", "reason": "unsupported_market_type"}
@@ -513,6 +441,7 @@ class EventSignalEngine:
             "event_direction": event_direction,
             "token_id": token_id,
             "side": side,
+            **_cadence_signal_metadata(events[0]),
         }
 
         if not token_book or token_book.get("best_ask") is None:
@@ -543,9 +472,8 @@ class EventSignalEngine:
         if (
             ask >= 0.95
             and primary_event_type in {
-                "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T4", "MULTIPLE_T3_TOWERS_DOWN",
-                "ALL_T3_TOWERS_DOWN", "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL",
-                "T3_PLUS_T4_CHAIN", "MULTI_STRUCTURE_COLLAPSE", "T3_TOWER_FALL",
+                "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T4",
+                "BASE_PRESSURE_T3_COLLAPSE", "BASE_PRESSURE_T4", "THRONE_EXPOSED",
             }
         ):
             return {
@@ -567,7 +495,12 @@ class EventSignalEngine:
                 **execution_scores,
             }
 
-        if primary_event_type in {"COMEBACK", "MAJOR_COMEBACK", "LATE_MAJOR_COMEBACK_REPRICE"} and spread is not None and spread > 0.08:
+        if primary_event_type in {
+            "POLL_COMEBACK_RECOVERY",
+            "POLL_MAJOR_COMEBACK_RECOVERY",
+            "POLL_LEAD_FLIP_WITH_KILLS",
+            "POLL_STOMP_THROW_CONFIRMED",
+        } and spread is not None and spread > 0.08:
             return {
                 "decision": "skip", "reason": "wide_spread_comeback_alert",
                 **base_metadata,
@@ -745,6 +678,7 @@ class EventSignalEngine:
             "event_is_primary": event_is_primary(primary_event_type),
             "event_family": event_family(primary_event_type),
             "event_quality": event_quality,
+            **_cadence_signal_metadata(events[0]),
             **execution_scores,
             "trade_score": round(trade_score, 4),
             "cluster_event_types": "+".join(cluster_event_types),
@@ -798,38 +732,34 @@ class EventSignalEngine:
         delta = _event_attr(event, "delta")
         if delta is not None and isinstance(delta, (int, float)):
             abs_delta = abs(float(delta))
-            if event_type in _LEAD_SWING_TYPES:
-                threshold = _event_attr(event, "threshold") or _dynamic_lead_swing_threshold(event_type, game_time)
-                value *= min(abs_delta / float(threshold), 3.0)
-            elif event_type == "COMEBACK":
-                value *= min(abs_delta / 3000, 2.0)
-            elif event_type == "MAJOR_COMEBACK":
-                value *= min(abs_delta / 8000, 2.0)
-            elif event_type == "COMEBACK_RECOVERY_60S":
+            if event_type == "POLL_COMEBACK_RECOVERY":
                 value *= min(abs_delta / 1800, 2.0)
-            elif event_type == "MAJOR_COMEBACK_RECOVERY_60S":
+            elif event_type == "POLL_MAJOR_COMEBACK_RECOVERY":
                 value *= min(abs_delta / 3500, 2.0)
-            elif event_type in {"LATE_MAJOR_COMEBACK_REPRICE", "LATE_ECONOMIC_CRASH"}:
-                value *= min(abs_delta / 10_000, 2.0)
-            elif event_type in {"CHAINED_LATE_FIGHT_RECOVERY", "STOMP_THROW_WITH_OBJECTIVE_RISK"}:
-                value *= min(abs_delta / 5_000, 2.0)
-            elif event_type in {"KILL_CONFIRMED_LEAD_SWING", "FIGHT_TO_GOLD_CONFIRM_30S"}:
-                value *= min(abs_delta / _KILL_CONFIRMED_NW_THRESHOLD, 2.0)
-            elif event_type == "TEAMFIGHT_SWING_30S":
-                value *= min(abs_delta / 2.0, 2.0)
-            elif event_type in {"KILL_BURST_30S", "ULTRA_LATE_WIPE_CONFIRMED"}:
+            elif event_type == "POLL_KILL_BURST_CONFIRMED":
                 value *= min(abs_delta / _KILL_BURST_MIN, 2.0)
+            elif event_type == "POLL_FIGHT_SWING":
+                value *= min(abs_delta / 1000.0, 2.0)
+            elif event_type == "POLL_LEAD_FLIP_WITH_KILLS":
+                value *= min(abs_delta / 1500.0, 2.0)
+            elif event_type == "POLL_STOMP_THROW_CONFIRMED":
+                value *= min(abs_delta / 2500.0, 2.0)
+            elif event_type == "POLL_LATE_FIGHT_FLIP":
+                value *= min(abs_delta / 2500.0, 2.0)
+            elif event_type == "POLL_ULTRA_LATE_FIGHT_FLIP":
+                value *= min(abs_delta / 3000.0, 2.0)
             elif event_type in {
-                "T2_TOWER_FALL", "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN",
-                "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL",
                 "OBJECTIVE_CONVERSION_T2", "OBJECTIVE_CONVERSION_T3", "OBJECTIVE_CONVERSION_T4",
-                "MULTIPLE_T2_TOWERS_DOWN", "ALL_T2_TOWERS_DOWN",
-                "THRONE_EXPOSED", "ALL_T3_TOWERS_DOWN",
-                "T3_PLUS_T4_CHAIN", "MULTI_STRUCTURE_COLLAPSE",
+                "THRONE_EXPOSED", "BASE_PRESSURE_T4", "BASE_PRESSURE_T3_COLLAPSE",
             }:
                 if abs_delta > 1:
                     value *= min(abs_delta, 2.0)
 
+        cadence_quality = _event_attr(event, "source_cadence_quality")
+        if cadence_quality == "stale_gap":
+            value *= 0.75
+        elif cadence_quality == "invalid_gap":
+            value = 0.0
         return min(value, spec.cap)
 
     @staticmethod
@@ -844,44 +774,30 @@ class EventSignalEngine:
         event_types = {_event_attr(e, "event_type") for e in events}
         if "THRONE_EXPOSED" in event_types:
             return 0.70
-        if "OBJECTIVE_CONVERSION_T4" in event_types or "SECOND_T4_TOWER_FALL" in event_types:
+        if "OBJECTIVE_CONVERSION_T4" in event_types:
             return 0.65
-        if "T3_PLUS_T4_CHAIN" in event_types:
-            return 0.55
-        if "FIRST_T4_TOWER_FALL" in event_types:
+        if "BASE_PRESSURE_T4" in event_types:
             return 0.50
-        if "MULTI_STRUCTURE_COLLAPSE" in event_types:
-            return 0.45
-        if "ULTRA_LATE_WIPE_CONFIRMED" in event_types:
+        if "POLL_ULTRA_LATE_FIGHT_FLIP" in event_types:
             return 0.52
-        if "ULTRA_LATE_WIPE" in event_types:
-            return 0.48
-        if "STOMP_THROW_WITH_OBJECTIVE_RISK" in event_types:
-            return 0.40
-        if "MAJOR_COMEBACK_RECOVERY_60S" in event_types:
-            return 0.34
-        if "LATE_MAJOR_COMEBACK_REPRICE" in event_types:
-            return 0.36
-        if "COMEBACK_RECOVERY_60S" in event_types:
-            return 0.22
-        if "CHAINED_LATE_FIGHT_RECOVERY" in event_types:
-            return 0.34
-        if "LATE_ECONOMIC_CRASH" in event_types:
-            return 0.32
         if "OBJECTIVE_CONVERSION_T3" in event_types:
             return 0.42
-        if "ALL_T3_TOWERS_DOWN" in event_types:
+        if "POLL_STOMP_THROW_CONFIRMED" in event_types:
             return 0.40
-        if "MULTIPLE_T3_TOWERS_DOWN" in event_types:
+        if "POLL_LATE_FIGHT_FLIP" in event_types:
             return 0.36
-        if "T3_TOWER_FALL" in event_types:
-            return 0.30
+        if "POLL_LEAD_FLIP_WITH_KILLS" in event_types or "POLL_MAJOR_COMEBACK_RECOVERY" in event_types:
+            return 0.34
+        if "BASE_PRESSURE_T3_COLLAPSE" in event_types:
+            return 0.32
+        if "POLL_KILL_BURST_CONFIRMED" in event_types:
+            return 0.28
+        if "POLL_FIGHT_SWING" in event_types:
+            return 0.24
+        if "POLL_COMEBACK_RECOVERY" in event_types:
+            return 0.22
         if "OBJECTIVE_CONVERSION_T2" in event_types:
             return 0.20
-        if "ALL_T2_TOWERS_DOWN" in event_types:
-            return 0.14
-        if "MULTIPLE_T2_TOWERS_DOWN" in event_types:
-            return 0.12
         game_time = game.get("game_time_sec")
         if game_time is not None and game_time >= 2400:
             return 0.22
@@ -910,27 +826,24 @@ class EventSignalEngine:
                 mult *= 1.03
             return min(mult, 1.18)
 
-        raw_structure = event_types & {
-            "T2_TOWER_FALL", "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN",
-            "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL",
-            "MULTIPLE_T2_TOWERS_DOWN", "ALL_T2_TOWERS_DOWN",
-            "THRONE_EXPOSED", "ALL_T3_TOWERS_DOWN",
-            "T3_PLUS_T4_CHAIN", "MULTI_STRUCTURE_COLLAPSE",
-        }
+        raw_structure = event_types & {"BASE_PRESSURE_T3_COLLAPSE", "BASE_PRESSURE_T4", "THRONE_EXPOSED"}
         support = event_types & {
-            "COMEBACK", "MAJOR_COMEBACK", "LEAD_SWING_60S", "LEAD_SWING_30S",
-            "COMEBACK_RECOVERY_60S", "MAJOR_COMEBACK_RECOVERY_60S",
-            "EXTREME_LEAD_SWING_30S", "KILL_CONFIRMED_LEAD_SWING",
-            "TEAMFIGHT_SWING_30S", "KILL_BURST_30S", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "STOMP_THROW",
-            "LATE_MAJOR_COMEBACK_REPRICE", "CHAINED_LATE_FIGHT_RECOVERY",
-            "LATE_ECONOMIC_CRASH", "ULTRA_LATE_WIPE_CONFIRMED",
-            "STOMP_THROW_WITH_OBJECTIVE_RISK", "FIGHT_TO_GOLD_CONFIRM_30S",
+            "POLL_COMEBACK_RECOVERY", "POLL_MAJOR_COMEBACK_RECOVERY",
+            "POLL_LEAD_FLIP_WITH_KILLS", "POLL_KILL_BURST_CONFIRMED",
+            "POLL_FIGHT_SWING", "POLL_LATE_FIGHT_FLIP",
+            "POLL_ULTRA_LATE_FIGHT_FLIP", "POLL_STOMP_THROW_CONFIRMED",
         }
         if raw_structure and not support:
             mult *= 0.82
-        if "ALL_T2_TOWERS_DOWN" in event_types:
-            mult *= 1.03
-        if event_team_lead is not None and event_team_lead < -4000 and not (event_types & {"COMEBACK", "MAJOR_COMEBACK", "STOMP_THROW", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "LATE_MAJOR_COMEBACK_REPRICE", "STOMP_THROW_WITH_OBJECTIVE_RISK"}):
+        comeback_like = {
+            "POLL_COMEBACK_RECOVERY",
+            "POLL_MAJOR_COMEBACK_RECOVERY",
+            "POLL_LEAD_FLIP_WITH_KILLS",
+            "POLL_STOMP_THROW_CONFIRMED",
+            "POLL_LATE_FIGHT_FLIP",
+            "POLL_ULTRA_LATE_FIGHT_FLIP",
+        }
+        if event_team_lead is not None and event_team_lead < -4000 and not (event_types & comeback_like):
             mult *= 0.92
         return min(max(mult, 0.75), 1.15)
 
@@ -945,27 +858,33 @@ class EventSignalEngine:
 
         if any(e.startswith("OBJECTIVE_CONVERSION_") for e in event_types):
             required += 0.005
-        if event_types & {"LATE_MAJOR_COMEBACK_REPRICE", "CHAINED_LATE_FIGHT_RECOVERY", "LATE_ECONOMIC_CRASH", "STOMP_THROW_WITH_OBJECTIVE_RISK"}:
+        if event_types & {"POLL_STOMP_THROW_CONFIRMED", "POLL_ULTRA_LATE_FIGHT_FLIP"}:
             required += 0.02
-        if event_types & {"COMEBACK_RECOVERY_60S", "MAJOR_COMEBACK_RECOVERY_60S"}:
+        if event_types & {"POLL_COMEBACK_RECOVERY", "POLL_MAJOR_COMEBACK_RECOVERY", "POLL_LEAD_FLIP_WITH_KILLS"}:
             required += 0.01
-        if event_types == {"OBJECTIVE_CONVERSION_T2"} or event_types == {"T2_TOWER_FALL"}:
+        if event_types == {"OBJECTIVE_CONVERSION_T2"}:
             required += 0.015
         if spread is not None and spread > MAX_SPREAD * 0.5:
             required += 0.005
         if ask >= 0.75:
             required += 0.005
-        if "ALL_T2_TOWERS_DOWN" in event_types:
-            required -= 0.002
         if event_team_lead is not None:
-            if event_team_lead < -4000 and not (event_types & {"COMEBACK", "MAJOR_COMEBACK", "STOMP_THROW", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE", "LATE_MAJOR_COMEBACK_REPRICE", "STOMP_THROW_WITH_OBJECTIVE_RISK"}):
+            comeback_like = {
+                "POLL_COMEBACK_RECOVERY",
+                "POLL_MAJOR_COMEBACK_RECOVERY",
+                "POLL_LEAD_FLIP_WITH_KILLS",
+                "POLL_STOMP_THROW_CONFIRMED",
+                "POLL_LATE_FIGHT_FLIP",
+                "POLL_ULTRA_LATE_FIGHT_FLIP",
+            }
+            if event_team_lead < -4000 and not (event_types & comeback_like):
                 required += 0.010
-            elif event_team_lead >= 10000 and any(e.startswith("OBJECTIVE_CONVERSION_") or e.endswith("T4_TOWER_FALL") for e in event_types):
+            elif event_team_lead >= 10000 and any(e.startswith("OBJECTIVE_CONVERSION_") or e == "BASE_PRESSURE_T4" for e in event_types):
                 required -= 0.003
         required = max(MIN_EXECUTABLE_EDGE, required)
 
         game_time = game.get("game_time_sec")
-        if game_time is not None and game_time >= 45 * 60 and not (event_types & {"ULTRA_LATE_WIPE", "ULTRA_LATE_WIPE_CONFIRMED", "SECOND_T4_TOWER_FALL", "OBJECTIVE_CONVERSION_T4"}):
+        if game_time is not None and game_time >= 45 * 60 and not (event_types & {"POLL_ULTRA_LATE_FIGHT_FLIP", "BASE_PRESSURE_T4", "THRONE_EXPOSED", "OBJECTIVE_CONVERSION_T4"}):
             required += 0.005
         return required
 

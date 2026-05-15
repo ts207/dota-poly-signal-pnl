@@ -50,9 +50,12 @@ def main():
     labels["match_id"] = labels["match_id"].astype(str)
     labeled_match_ids = set(labels["match_id"].unique())
 
-    features_path = logs_dir / "liveleague_features.csv"
+    features_path = logs_dir / "rich_context.csv"
     if not features_path.exists():
-        print(f"CRITICAL: {features_path} missing.")
+        features_path = logs_dir / "liveleague_features.csv"
+    
+    if not features_path.exists():
+        print(f"CRITICAL: Rich context features missing (tried rich_context.csv and liveleague_features.csv in {logs_dir}).")
         sys.exit(1)
     
     df_features = pd.read_csv(features_path)

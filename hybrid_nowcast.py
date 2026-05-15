@@ -177,11 +177,9 @@ def _structure_adjustment(events: list[Any]) -> float:
     event_types = {_event_attr(event, "event_type", "") for event in events}
     if "THRONE_EXPOSED" in event_types:
         return 0.12
-    if "SECOND_T4_TOWER_FALL" in event_types or "OBJECTIVE_CONVERSION_T4" in event_types:
+    if "BASE_PRESSURE_T4" in event_types or "OBJECTIVE_CONVERSION_T4" in event_types:
         return 0.08
-    if "FIRST_T4_TOWER_FALL" in event_types or "T3_PLUS_T4_CHAIN" in event_types:
-        return 0.05
-    if "OBJECTIVE_CONVERSION_T3" in event_types or "ALL_T3_TOWERS_DOWN" in event_types:
+    if "OBJECTIVE_CONVERSION_T3" in event_types or "BASE_PRESSURE_T3_COLLAPSE" in event_types:
         return 0.035
     return 0.0
 
@@ -233,6 +231,6 @@ def _confidence(usage: str, events: list[Any]) -> float:
     base = {"direct": 0.8, "prior": 0.55, "background": 0.35, "unknown": 0.25}.get(usage, 0.25)
     if any(str(_event_attr(e, "event_type", "")).startswith("OBJECTIVE_CONVERSION_") for e in events):
         base += 0.1
-    if any(_event_attr(e, "event_type") in {"THRONE_EXPOSED", "SECOND_T4_TOWER_FALL"} for e in events):
+    if any(_event_attr(e, "event_type") in {"THRONE_EXPOSED", "BASE_PRESSURE_T4"} for e in events):
         base += 0.1
     return min(base, 1.0)

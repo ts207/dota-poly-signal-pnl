@@ -25,7 +25,7 @@ STEAM_MATCH_URL = "https://api.steampowered.com/IDOTA2Match_570/GetMatchDetails/
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill labels/match_results.csv from logged match IDs.")
-    parser.add_argument("--features", default="logs/liveleague_features.csv")
+    parser.add_argument("--features", default="logs/rich_context.csv")
     parser.add_argument("--labels", default="labels/match_results.csv")
     parser.add_argument("--source", choices=["opendota", "steam", "both"], default="both")
     parser.add_argument("--sleep-sec", type=float, default=1.0)

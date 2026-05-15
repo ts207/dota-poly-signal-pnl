@@ -29,8 +29,6 @@ from dataclasses import dataclass
 from event_detector import EventDetector
 from signal_engine import ACTIVE_EVENTS, apply_probability_move
 from config import (
-    EVENT_LEAD_SWING_30S,
-    EVENT_LEAD_SWING_60S,
     PRICE_LOOKBACK_SEC,
     MAX_SPREAD,
     MIN_ASK_SIZE_USD,
@@ -104,8 +102,37 @@ SEGMENTS = [
 # Must match ACTIVE_EVENTS in signal_engine.py.
 EVENT_EXPECTED_MOVE = {name: spec.base for name, spec in ACTIVE_EVENTS.items()}
 
-# Events that only fire on high severity
-_HIGH_SEVERITY_ONLY = frozenset({"LEAD_SWING_30S", "LEAD_SWING_60S"})
+_HIGH_SEVERITY_ONLY = frozenset()
+
+
+def _scale_expected_move(event_type: str, base_move: float, delta: float | int | None) -> float:
+    if delta is None:
+        return base_move
+    abs_delta = abs(float(delta))
+    if event_type == "POLL_COMEBACK_RECOVERY":
+        return base_move * min(abs_delta / 1800.0, 2.0)
+    if event_type == "POLL_MAJOR_COMEBACK_RECOVERY":
+        return base_move * min(abs_delta / 3500.0, 2.0)
+    if event_type == "POLL_KILL_BURST_CONFIRMED":
+        return base_move * min(abs_delta / 3.0, 2.0)
+    if event_type == "POLL_FIGHT_SWING":
+        return base_move * min(abs_delta / 1000.0, 2.0)
+    if event_type == "POLL_LEAD_FLIP_WITH_KILLS":
+        return base_move * min(abs_delta / 1500.0, 2.0)
+    if event_type in {"POLL_STOMP_THROW_CONFIRMED", "POLL_LATE_FIGHT_FLIP"}:
+        return base_move * min(abs_delta / 2500.0, 2.0)
+    if event_type == "POLL_ULTRA_LATE_FIGHT_FLIP":
+        return base_move * min(abs_delta / 3000.0, 2.0)
+    if event_type in {
+        "OBJECTIVE_CONVERSION_T2",
+        "OBJECTIVE_CONVERSION_T3",
+        "OBJECTIVE_CONVERSION_T4",
+        "BASE_PRESSURE_T3_COLLAPSE",
+        "BASE_PRESSURE_T4",
+        "THRONE_EXPOSED",
+    } and abs_delta > 1:
+        return base_move * min(abs_delta, 2.0)
+    return base_move
 
 
 @dataclass
@@ -323,22 +350,7 @@ def run_backtest(
                     reject("cooldown", evt.event_type)
                     continue
 
-                expected_move = EVENT_EXPECTED_MOVE[evt.event_type]
-
-                # Scale by magnitude for events that support it
-                if evt.delta is not None:
-                    if evt.event_type in ("LEAD_SWING_30S", "LEAD_SWING_60S"):
-                        threshold = EVENT_LEAD_SWING_30S if "30S" in evt.event_type else EVENT_LEAD_SWING_60S
-                        expected_move *= min(abs(evt.delta) / threshold, 3.0)
-                    elif evt.event_type == "COMEBACK":
-                        expected_move *= min(abs(evt.delta) / 3000, 2.0)
-                    elif evt.event_type == "KILL_CONFIRMED_LEAD_SWING":
-                        expected_move *= min(abs(evt.delta) / 2500, 2.0)
-                    elif evt.event_type in ("KILL_BURST_30S", "LATE_GAME_WIPE", "ULTRA_LATE_WIPE") :
-                        expected_move *= min(abs(evt.delta) / 5, 2.0)
-                    elif evt.event_type in ("T2_TOWER_FALL", "T3_TOWER_FALL", "MULTIPLE_T3_TOWERS_DOWN", "FIRST_T4_TOWER_FALL", "SECOND_T4_TOWER_FALL"):
-                        if evt.delta > 1:
-                            expected_move *= min(float(evt.delta), 2.0)
+                expected_move = _scale_expected_move(evt.event_type, EVENT_EXPECTED_MOVE[evt.event_type], evt.delta)
 
                 if direction == "radiant":
                     token_ticks = rad_ticks

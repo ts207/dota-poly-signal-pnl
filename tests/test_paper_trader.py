@@ -21,7 +21,7 @@ def _signal(**overrides):
         "fair_price": 0.70,
         "target_size_usd": 25,
         "game_time_sec": 1200,
-        "event_type": "FIRST_T4_TOWER_FALL",
+        "event_type": "BASE_PRESSURE_T4",
         "lag": 0.15,
         "expected_move": 0.22,
     }
@@ -62,7 +62,7 @@ def test_force_exit_sells_at_bid_not_mid():
     trader.positions["YES"] = Position(
         token_id="YES", match_id="M1", market_name="Test", side="YES",
         entry_price=0.50, shares=50, cost_usd=25, entry_time_ns=time.time_ns(),
-        entry_game_time_sec=1200, event_type="FIRST_T4_TOWER_FALL", lag=0.1, expected_move=0.2,
+        entry_game_time_sec=1200, event_type="BASE_PRESSURE_T4", lag=0.1, expected_move=0.2,
     )
     trader._match_open_usd["M1"] = 25
     store = Store({"YES": {"best_bid": 0.60, "best_ask": 0.80}})
@@ -166,7 +166,7 @@ def test_load_open_positions_replays_trade_csv(tmp_path):
             "entry_price": "0.39",
             "shares": "142.05128205128204",
             "cost_usd": "55.4",
-            "event_type": "COMEBACK_RECOVERY_60S",
+            "event_type": "POLL_COMEBACK_RECOVERY",
             "lag": "0.1258",
             "expected_move": "0.1308",
             "entry_game_time_sec": "1447",
@@ -181,7 +181,7 @@ def test_load_open_positions_replays_trade_csv(tmp_path):
             "entry_price": "0.50",
             "shares": "20",
             "cost_usd": "10",
-            "event_type": "LEAD_SWING_60S",
+            "event_type": "POLL_FIGHT_SWING",
             "lag": "0.1",
             "expected_move": "0.2",
             "entry_game_time_sec": "1200",

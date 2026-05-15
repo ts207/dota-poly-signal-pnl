@@ -1,56 +1,40 @@
 from __future__ import annotations
 
+EVENT_SCHEMA_VERSION = "cadence_v1"
+
 TIER_A_EVENTS = frozenset({
-    "THRONE_EXPOSED",
-    "SECOND_T4_TOWER_FALL",
     "OBJECTIVE_CONVERSION_T4",
-    "T3_PLUS_T4_CHAIN",
-    "OBJECTIVE_CONVERSION_T3",
+    "THRONE_EXPOSED",
+    "POLL_ULTRA_LATE_FIGHT_FLIP",
 })
 
 TIER_B_EVENTS = frozenset({
-    "LATE_MAJOR_COMEBACK_REPRICE",
-    "CHAINED_LATE_FIGHT_RECOVERY",
-    "LATE_ECONOMIC_CRASH",
-    "ULTRA_LATE_WIPE_CONFIRMED",
-    "STOMP_THROW_WITH_OBJECTIVE_RISK",
-    "ULTRA_LATE_WIPE",
-    "LATE_GAME_WIPE",
-    "STOMP_THROW",
-    "MAJOR_COMEBACK",
-    "MAJOR_COMEBACK_RECOVERY_60S",
-    "COMEBACK_RECOVERY_60S",
-    "FIRST_T4_TOWER_FALL",
-    "ALL_T3_TOWERS_DOWN",
-    "MULTI_STRUCTURE_COLLAPSE",
-    "MULTIPLE_T3_TOWERS_DOWN",
-    "KILL_CONFIRMED_LEAD_SWING",
-    "TEAMFIGHT_SWING_30S",
-    "KILL_BURST_30S",
-    "LEAD_SWING_30S",
-    "MULTIPLE_T2_TOWERS_DOWN",
-    "FIGHT_TO_GOLD_CONFIRM_30S",
+    "OBJECTIVE_CONVERSION_T3",
+    "BASE_PRESSURE_T4",
+    "BASE_PRESSURE_T3_COLLAPSE",
+    "POLL_STOMP_THROW_CONFIRMED",
+    "POLL_LATE_FIGHT_FLIP",
+    "POLL_LEAD_FLIP_WITH_KILLS",
+    "POLL_MAJOR_COMEBACK_RECOVERY",
+    "POLL_KILL_BURST_CONFIRMED",
+    "POLL_FIGHT_SWING",
+    "POLL_COMEBACK_RECOVERY",
 })
 
-TIER_C_EVENTS = frozenset({
-    "EXTREME_LEAD_SWING_30S",
-    "LEAD_SWING_60S",
-    "T2_TOWER_FALL",
-    "ALL_T2_TOWERS_DOWN",
-    "COMEBACK",
-})
+TIER_C_EVENTS = frozenset()
 
 RESEARCH_EVENTS = frozenset({
     "OBJECTIVE_CONVERSION_T2",
+    "BLOODY_EVEN_FIGHT",
+    "ECON_ONLY_MOVE",
+    "STRUCTURE_CONTEXT",
     "LOW_PRICE_UNDERDOG_COUNTERPUNCH",
     "LATE_CHEAP_LEAD_SWING_REPRICE",
-    "KILL_CONFIRMED_LEAD_SWING_LATE_CHEAP",
     "CORE_NETWORTH_CRASH",
     "CORE_GAP_FLIP",
     "SUPPORT_KILL_FILTER",
     "AEGIS_PUSH_WINDOW",
     "ROSHAN_SWING",
-    "BLOODY_EVEN_FIGHT_30S",
 })
 
 BLOCKING_EVENTS = frozenset({
@@ -63,42 +47,63 @@ BLOCKING_EVENTS = frozenset({
     "DUPLICATE_MATCH_MAPPING_EVENT",
 })
 
+RETIRED_FIXED_WINDOW_EVENTS = frozenset({
+    "LEAD_SWING_30S",
+    "LEAD_SWING_60S",
+    "EXTREME_LEAD_SWING_30S",
+    "TEAMFIGHT_SWING_30S",
+    "KILL_BURST_30S",
+    "KILL_CONFIRMED_LEAD_SWING",
+    "FIGHT_TO_GOLD_CONFIRM_30S",
+    "LATE_GAME_WIPE",
+    "ULTRA_LATE_WIPE",
+    "STOMP_THROW",
+    "COMEBACK",
+    "COMEBACK_RECOVERY_60S",
+    "MAJOR_COMEBACK",
+    "MAJOR_COMEBACK_RECOVERY_60S",
+    "LATE_MAJOR_COMEBACK_REPRICE",
+    "CHAINED_LATE_FIGHT_RECOVERY",
+    "LATE_ECONOMIC_CRASH",
+    "ULTRA_LATE_WIPE_CONFIRMED",
+    "STOMP_THROW_WITH_OBJECTIVE_RISK",
+    "T2_TOWER_FALL",
+    "T3_TOWER_FALL",
+    "MULTIPLE_T2_TOWERS_DOWN",
+    "ALL_T2_TOWERS_DOWN",
+    "MULTIPLE_T3_TOWERS_DOWN",
+    "ALL_T3_TOWERS_DOWN",
+    "FIRST_T4_TOWER_FALL",
+    "SECOND_T4_TOWER_FALL",
+    "T3_PLUS_T4_CHAIN",
+    "MULTI_STRUCTURE_COLLAPSE",
+    "BLOODY_EVEN_FIGHT_30S",
+})
+
 FIRST_LIVE_ALLOWLIST = frozenset({
     "THRONE_EXPOSED",
-    "SECOND_T4_TOWER_FALL",
     "OBJECTIVE_CONVERSION_T4",
-    "T3_PLUS_T4_CHAIN",
+    "POLL_ULTRA_LATE_FIGHT_FLIP",
 })
 
 EVENT_FAMILY: dict[str, str] = {
-    "THRONE_EXPOSED": "terminal_base",
-    "SECOND_T4_TOWER_FALL": "terminal_base",
     "OBJECTIVE_CONVERSION_T4": "fight_objective_conversion",
-    "T3_PLUS_T4_CHAIN": "fight_objective_conversion",
     "OBJECTIVE_CONVERSION_T3": "fight_objective_conversion",
     "OBJECTIVE_CONVERSION_T2": "research",
-    "LATE_MAJOR_COMEBACK_REPRICE": "late_reversal",
-    "CHAINED_LATE_FIGHT_RECOVERY": "late_reversal",
-    "LATE_ECONOMIC_CRASH": "late_reversal",
-    "ULTRA_LATE_WIPE_CONFIRMED": "late_reversal",
-    "STOMP_THROW_WITH_OBJECTIVE_RISK": "late_reversal",
-    "MAJOR_COMEBACK_RECOVERY_60S": "late_reversal",
-    "COMEBACK_RECOVERY_60S": "late_reversal",
-    "ALL_T3_TOWERS_DOWN": "base_pressure",
-    "FIRST_T4_TOWER_FALL": "base_pressure",
-    "MULTI_STRUCTURE_COLLAPSE": "base_pressure",
-    "MULTIPLE_T3_TOWERS_DOWN": "base_pressure",
-    "KILL_CONFIRMED_LEAD_SWING": "fight_economy_confirmation",
-    "TEAMFIGHT_SWING_30S": "fight_economy_confirmation",
-    "BLOODY_EVEN_FIGHT_30S": "teamfight_context",
-    "EXTREME_LEAD_SWING_30S": "fight_economy_confirmation",
-    "LEAD_SWING_60S": "fight_economy_confirmation",
-    "LEAD_SWING_30S": "fight_economy_confirmation",
-    "KILL_BURST_30S": "fight_economy_confirmation",
-    "COMEBACK": "fight_economy_confirmation",
-    "T2_TOWER_FALL": "map_control_context",
-    "MULTIPLE_T2_TOWERS_DOWN": "map_control_context",
-    "ALL_T2_TOWERS_DOWN": "map_control_context",
+    "THRONE_EXPOSED": "terminal_base",
+    "BASE_PRESSURE_T4": "terminal_base",
+    "BASE_PRESSURE_T3_COLLAPSE": "base_pressure",
+    "POLL_ULTRA_LATE_FIGHT_FLIP": "late_reversal",
+    "POLL_STOMP_THROW_CONFIRMED": "late_reversal",
+    "POLL_LATE_FIGHT_FLIP": "late_reversal",
+    "POLL_LEAD_FLIP_WITH_KILLS": "late_reversal",
+    "POLL_MAJOR_COMEBACK_RECOVERY": "late_reversal",
+    "POLL_COMEBACK_RECOVERY": "late_reversal",
+    "POLL_KILL_BURST_CONFIRMED": "fight_economy_confirmation",
+    "POLL_FIGHT_SWING": "fight_economy_confirmation",
+    "BLOODY_EVEN_FIGHT": "teamfight_context",
+    "ECON_ONLY_MOVE": "research",
+    "STRUCTURE_CONTEXT": "research",
 }
 
 
@@ -113,6 +118,8 @@ def event_tier(event_type: str | None) -> str:
         return "research"
     if event_type in BLOCKING_EVENTS:
         return "block"
+    if event_type in RETIRED_FIXED_WINDOW_EVENTS:
+        return "retired"
     return "unknown"
 
 
@@ -125,6 +132,8 @@ def event_family(event_type: str | None) -> str:
         return "blocking"
     if event_type in RESEARCH_EVENTS:
         return "research"
+    if event_type in RETIRED_FIXED_WINDOW_EVENTS:
+        return "retired"
     return EVENT_FAMILY.get(str(event_type or ""), "unknown")
 
 

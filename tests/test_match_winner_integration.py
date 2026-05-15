@@ -9,7 +9,7 @@ from poly_ws import BookStore
 from paper_trader import PaperTrader
 from storage import (
     SignalLogger, DotaEventLogger, PositionLogger, RawSnapshotLogger,
-    LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger,
+    LatencyLogger, LiveLeagueRawLogger, RichContextLogger,
     SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger
 )
 from signal_engine import EventSignalEngine
@@ -25,7 +25,7 @@ async def test_match_winner_sidecar_integration(tmp_path):
     snapshot_logger = MagicMock(spec=RawSnapshotLogger)
     latency_logger = MagicMock(spec=LatencyLogger)
     llg_raw_logger = MagicMock(spec=LiveLeagueRawLogger)
-    llg_feature_logger = MagicMock(spec=LiveLeagueFeatureLogger)
+    rich_context_logger = MagicMock(spec=RichContextLogger)
     source_delay_logger = MagicMock(spec=SourceDelayLogger)
     rescue_logger = MagicMock(spec=BookRefreshRescueLogger)
     
@@ -40,7 +40,7 @@ async def test_match_winner_sidecar_integration(tmp_path):
     book_store.update_direct("match_no", best_bid=0.30, best_ask=0.35, bid_size=100, ask_size=100)
     
     trader = PaperTrader()
-    signal_engine = EventSignalEngine(trader=trader)
+    signal_engine = EventSignalEngine()
     
     # Mock mappings
     mappings = [
@@ -119,7 +119,7 @@ async def test_match_winner_sidecar_integration(tmp_path):
                 live_executor=None,
                 live_logger=None,
                 llg_raw_logger=llg_raw_logger,
-                llg_feature_logger=llg_feature_logger,
+                rich_context_logger=rich_context_logger,
                 source_delay_logger=source_delay_logger,
                 rescue_logger=rescue_logger,
                 match_winner_logger=match_winner_logger,

@@ -77,7 +77,7 @@ def test_adverse_exit_runs_for_primary_opposing_signal_even_when_not_executable(
         token_id="NO", match_id="M1", market_name="Test", side="NO",
         entry_price=0.50, shares=50, cost_usd=25,
         entry_time_ns=time.time_ns(), entry_game_time_sec=1200,
-        event_type="FIRST_T4_TOWER_FALL", lag=0.1, expected_move=0.2,
+        event_type="BASE_PRESSURE_T4", lag=0.1, expected_move=0.2,
     )
     trader._match_open_usd["M1"] = 25
 

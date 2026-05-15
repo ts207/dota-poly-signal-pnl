@@ -16,6 +16,9 @@ from config import (
     DEFAULT_MAX_FILL_PRICE,
     DISABLE_STRUCTURE_TRADES,
     LIVE_ORDER_TYPE,
+    LIVE_ALLOWED_CADENCE_QUALITIES,
+    LIVE_MIN_EVENT_QUALITY,
+    LIVE_REQUIRE_CADENCE_SCHEMA,
     LIVE_SAFETY_MARGIN,
     LIVE_TICK_SIZE,
     MAX_BOOK_AGE_MS,
@@ -33,11 +36,12 @@ from signal_engine import age_ms
 from mapping_validator import validate_mapping_identity
 
 STRUCTURE_EVENTS = frozenset({
-    "T2_TOWER_FALL",
-    "T3_TOWER_FALL",
-    "MULTIPLE_T3_TOWERS_DOWN",
-    "FIRST_T4_TOWER_FALL",
-    "SECOND_T4_TOWER_FALL",
+    "OBJECTIVE_CONVERSION_T2",
+    "OBJECTIVE_CONVERSION_T3",
+    "OBJECTIVE_CONVERSION_T4",
+    "BASE_PRESSURE_T3_COLLAPSE",
+    "BASE_PRESSURE_T4",
+    "THRONE_EXPOSED",
 })
 
 _ALLOWED_ORDER_TYPES = {"FAK", "FOK"}
@@ -311,6 +315,14 @@ class LiveExecutor:
 
         event_type = str(signal.get("event_type") or "")
         cluster_types = {e for e in str(signal.get("cluster_event_types") or event_type).split("+") if e}
+        if LIVE_REQUIRE_CADENCE_SCHEMA and signal.get("event_schema_version") != "cadence_v1":
+            return self._reject(signal, mapping, game, "missing_cadence_event_schema")
+        cadence_quality = str(signal.get("source_cadence_quality") or "")
+        if LIVE_ALLOWED_CADENCE_QUALITIES and cadence_quality not in LIVE_ALLOWED_CADENCE_QUALITIES:
+            return self._reject(signal, mapping, game, "cadence_quality_not_live_allowed")
+        event_quality = _to_float(signal.get("event_quality"))
+        if event_quality is None or event_quality < LIVE_MIN_EVENT_QUALITY:
+            return self._reject(signal, mapping, game, "event_quality_too_low")
         if event_type == "OBJECTIVE_CONVERSION_T3":
             ask = _to_float(signal.get("ask"))
             edge = _to_float(signal.get("executable_edge"))

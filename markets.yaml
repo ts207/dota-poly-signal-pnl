@@ -1074,3 +1074,315 @@ markets:
   confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-playti-rnx-2026-05-14
+- name: 'Dota 2: Vici Gaming vs Team Falcons - Game 1 Winner'
+  market_id: '2263479'
+  condition_id: '0x0bc879b80dd478b460ed17ed1228a8d8b715885bdbbadcb0661f93eeed49754c'
+  yes_token_id: '58729799878602276066364116777603713231760713132896184354189916342297803717952'
+  no_token_id: '68179589815106330372939371760001481705119215286769112922882519747054899993944'
+  market_type: MAP_WINNER
+  yes_team: Vici Gaming
+  no_team: Team Falcons
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vg-flc-2026-05-15
+- name: 'Dota 2: Vici Gaming vs Team Falcons - Game 2 Winner'
+  market_id: '2263480'
+  condition_id: '0x6743371b3e89354dc925a0e054af756e8e56994942254e014d7a6e94da08c263'
+  yes_token_id: '95647481868091826808808934181320721333243466350979986532497020204023745311825'
+  no_token_id: '38053360123561614139723712715567181166805330700892952546436763050375324723408'
+  market_type: MAP_WINNER
+  yes_team: Vici Gaming
+  no_team: Team Falcons
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vg-flc-2026-05-15
+- name: 'Dota 2: PARIVISION vs Natus Vincere - Game 1 Winner'
+  market_id: '2263499'
+  condition_id: '0x633b3cd4be8be5be8d71b747cebde3ff260e7ccf176cf4ce46e8d12241711735'
+  yes_token_id: '2817386794556468304826624787584086088808029369270939904481086177053983537997'
+  no_token_id: '52702669477835456979123924242823226278779416138531189013027207911551723585601'
+  market_type: MAP_WINNER
+  yes_team: PARIVISION
+  no_team: Natus Vincere
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-navi-2026-05-15
+- name: 'Dota 2: PARIVISION vs Natus Vincere - Game 2 Winner'
+  market_id: '2263500'
+  condition_id: '0x8993204379032dbebc6f075e04b7d3e5a5b4bbb01a61fa6f2f4c25ec6005acc8'
+  yes_token_id: '81084008517221177630836973244966786077357952896839122575328506345203321373695'
+  no_token_id: '104190387047818979190417695498938872185925078849878859997363048289565416810086'
+  market_type: MAP_WINNER
+  yes_team: PARIVISION
+  no_team: Natus Vincere
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-navi-2026-05-15
+- name: 'Dota 2: GamerLegion vs Team Spirit - Game 1 Winner'
+  market_id: '2263459'
+  condition_id: '0xd8b5b54633d2776b64da4a969f48f5bff84d5e90beeccbd1f6ab92a66148567c'
+  yes_token_id: '96403828311254812842753565870104947482211833342953532932470652232423433635435'
+  no_token_id: '59934104889771128473881167990072351443712182898743611985399277274421519975905'
+  market_type: MAP_WINNER
+  yes_team: GamerLegion
+  no_team: Team Spirit
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-gl-ts8-2026-05-15
+- name: 'Dota 2: GamerLegion vs Team Spirit - Game 2 Winner'
+  market_id: '2263460'
+  condition_id: '0x4727aead9869cbb49fb7ffbf5770075b22f6f71afc11a49bae418838fdd55ea4'
+  yes_token_id: '46511609651551413779629638112042180170836964803665049060246253986327556515960'
+  no_token_id: '77855592151876728047677544729456021838351621061758265592702881972378873723769'
+  market_type: MAP_WINNER
+  yes_team: GamerLegion
+  no_team: Team Spirit
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-gl-ts8-2026-05-15
+- name: 'Dota 2: Nigma Galaxy vs Xtreme Gaming - Game 1 Winner'
+  market_id: '2263519'
+  condition_id: '0xd66f5eb409327b05aa343a0a320d7f2592e25289484c288d055f1dee8afbbc90'
+  yes_token_id: '36036871853955153937542614145717863011437004044375524364763651788531468856002'
+  no_token_id: '84609161049898492282587731489674072448563235101702907961723320198785580419720'
+  market_type: MAP_WINNER
+  yes_team: Nigma Galaxy
+  no_team: Xtreme Gaming
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ngx-xtreme-2026-05-15
+- name: 'Dota 2: Nigma Galaxy vs Xtreme Gaming - Game 2 Winner'
+  market_id: '2263520'
+  condition_id: '0x3d3428c4dc56a3eb40f86630c1a658ab964b8e1809f358d2d465426be416ccc9'
+  yes_token_id: '48425405047219104457684052555094640671361666658517854847270455044378755290228'
+  no_token_id: '97211454051280213832853456287486305383365858218564093528535021934318264002774'
+  market_type: MAP_WINNER
+  yes_team: Nigma Galaxy
+  no_team: Xtreme Gaming
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ngx-xtreme-2026-05-15
+- name: 'Dota 2: Aurora vs ex-HEROIC - Game 1 Winner'
+  market_id: '2263439'
+  condition_id: '0xe7a5c0c83a292d3c67284223e9a3f141c2138b88323002f6d58303f22e90aca4'
+  yes_token_id: '111964941896493470286767071452516462280075408115994021284481492281945989306128'
+  no_token_id: '62855194606485837314724825463964878575840202755994741283207790226503974917659'
+  market_type: MAP_WINNER
+  yes_team: Aurora
+  no_team: ex-HEROIC
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-heroic2-2026-05-15
+- name: 'Dota 2: Aurora vs ex-HEROIC - Game 2 Winner'
+  market_id: '2263440'
+  condition_id: '0xfdb3826760ba056e7ed66bc155c36917ad967895b00f70f5bb0d6b2b871c6d97'
+  yes_token_id: '109315932209923100194739793192929852235691827271245871839930712695765017467414'
+  no_token_id: '78397315168824857542060975070772416787031691007605694395013553131428915848456'
+  market_type: MAP_WINNER
+  yes_team: Aurora
+  no_team: ex-HEROIC
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-heroic2-2026-05-15
+- name: 'Dota 2: Aurora vs GamerLegion - Game 1 Winner'
+  market_id: '2263619'
+  condition_id: '0xf53889a7d81d3250eca78ad6cc3479e1ca95948f7611ae27369e2334e5ecaab3'
+  yes_token_id: '112563652306756710999493205313293383009811620246106116010481853573805707814260'
+  no_token_id: '80295309386142921024222023482132028060094204456691309738540953593231721598934'
+  market_type: MAP_WINNER
+  yes_team: Aurora
+  no_team: GamerLegion
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-gl-2026-05-15
+- name: 'Dota 2: Aurora vs GamerLegion - Game 2 Winner'
+  market_id: '2263620'
+  condition_id: '0xc5d98e2e3d490ea71774e8919aa5f5f5cfbc633c41e3df9bbdf5f4b40e4f7986'
+  yes_token_id: '78933013405218681715394863403335173782463952006706454117392457646980808229696'
+  no_token_id: '34926334243988059897351491716557329688564907863982227418978387078328058744834'
+  market_type: MAP_WINNER
+  yes_team: Aurora
+  no_team: GamerLegion
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-gl-2026-05-15
+- name: 'Dota 2: PlayTime vs BetBoom Team - Game 1 Winner'
+  market_id: '2263539'
+  condition_id: '0x45b49302c7999de1b58631a7e7100fce13a344c97c0ee9e7f19b1adce57aaae7'
+  yes_token_id: '95475574258398490473129829605062805278576652231897110538972374488650262242889'
+  no_token_id: '49674773555956507960177965992962604988751122043832149342299139477168120728584'
+  market_type: MAP_WINNER
+  yes_team: PlayTime
+  no_team: BetBoom Team
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-playti-bb4-2026-05-15
+- name: 'Dota 2: PlayTime vs BetBoom Team - Game 2 Winner'
+  market_id: '2263540'
+  condition_id: '0x37d95851bafed1dd0d50317a0b6c713ecdc696b3dc1ca6299bd55d9faba4742b'
+  yes_token_id: '78867787762749148983482263809483697325207281209129733708626885770976880407935'
+  no_token_id: '107081116967814719953063269706487897917202645192534505534026818308656989112903'
+  market_type: MAP_WINNER
+  yes_team: PlayTime
+  no_team: BetBoom Team
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-playti-bb4-2026-05-15
+- name: 'Dota 2: Vici Gaming vs ex-HEROIC - Game 1 Winner'
+  market_id: '2263639'
+  condition_id: '0x4a1684bf73b951560a694cfec49de86be1a48a3031108fa3446f96cd8e084f99'
+  yes_token_id: '25077912160101692225372377655468629033416189378521405104268568814679716439683'
+  no_token_id: '103579375493196265035937422465843114323374986147854150489768169420501534245944'
+  market_type: MAP_WINNER
+  yes_team: Vici Gaming
+  no_team: ex-HEROIC
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vg-heroic2-2026-05-15
+- name: 'Dota 2: Vici Gaming vs ex-HEROIC - Game 2 Winner'
+  market_id: '2263640'
+  condition_id: '0x07534cef2355246a2105827d087193ae9edcfc371b4dddc4b3fbd81de941a451'
+  yes_token_id: '60611506113955894524102305680718957222326646096403324623560784730320634666912'
+  no_token_id: '63204815741335275120961699575274080744160097159438351111852155972427633438089'
+  market_type: MAP_WINNER
+  yes_team: Vici Gaming
+  no_team: ex-HEROIC
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vg-heroic2-2026-05-15
+- name: 'Dota 2: Team Liquid vs Team Falcons - Game 1 Winner'
+  market_id: '2263579'
+  condition_id: '0x77012ddcfc76052297c01a380f4ebfe09b094be8e3b39a14f7944c058bc2dcf2'
+  yes_token_id: '2045565837370551909989536379865102671584313967899298859459028552120513333778'
+  no_token_id: '46763590797788703854129285573729309252762804441090608023815267104714686201356'
+  market_type: MAP_WINNER
+  yes_team: Team Liquid
+  no_team: Team Falcons
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-liquid-flc-2026-05-15
+- name: 'Dota 2: Team Liquid vs Team Falcons - Game 2 Winner'
+  market_id: '2263580'
+  condition_id: '0xe94d8ffe8f4ba53d423817aaf8d2878948630204408c578e0a469f7801b0f8ac'
+  yes_token_id: '91352138811602713193293454056099704738577521177972964367273852934885155525180'
+  no_token_id: '72739014175769515943200693908928382793853485147882224445439074985472908813926'
+  market_type: MAP_WINNER
+  yes_team: Team Liquid
+  no_team: Team Falcons
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-liquid-flc-2026-05-15
+- name: 'Dota 2: Virtus.pro vs Team Spirit - Game 1 Winner'
+  market_id: '2263599'
+  condition_id: '0x3915dd6b1e26e86b4e1f879f011b38c89e4b30a21438275f67f89f751910e17b'
+  yes_token_id: '89696119654248157483373657712850434216325783742791639800098606384120990584294'
+  no_token_id: '57427619881182947724746141252844791540507589412937305258965013224970342794864'
+  market_type: MAP_WINNER
+  yes_team: Virtus.pro
+  no_team: Team Spirit
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vp-ts8-2026-05-15
+- name: 'Dota 2: Virtus.pro vs Team Spirit - Game 2 Winner'
+  market_id: '2263600'
+  condition_id: '0x3c3e1c82e4cd89a0abd4446c3c72f10d47e0c2b7a5cc4253b0006f5bd5520eee'
+  yes_token_id: '58941263876065548665593318342536923576090384212644900643899891684096838123650'
+  no_token_id: '99937264842507649764051865910365990055996256638215250333763472713808200158118'
+  market_type: MAP_WINNER
+  yes_team: Virtus.pro
+  no_team: Team Spirit
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 17:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vp-ts8-2026-05-15
+- name: 'Dota 2: Virtus.pro vs Team Liquid - Game 1 Winner'
+  market_id: '2263419'
+  condition_id: '0xa996ef9205941990c665f72ee59c9cf1d1f46822d03113f0e60e5652d2585acb'
+  yes_token_id: '70261730644085920968901422876189967764002006104956195273822171022732625938757'
+  no_token_id: '89762780969779643871372578472407895318785328567204857276476106486017336624893'
+  market_type: MAP_WINNER
+  yes_team: Virtus.pro
+  no_team: Team Liquid
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vp-liquid-2026-05-15
+- name: 'Dota 2: Virtus.pro vs Team Liquid - Game 2 Winner'
+  market_id: '2263420'
+  condition_id: '0x72d99babe31d47b1547d3a4c41ab684fc933ae5e56e3c06e424faaf1d88f2d78'
+  yes_token_id: '57665123784980681528099690216632830293028029550919830180107902278007364305590'
+  no_token_id: '59094428720905313688139361306787719679180291744666080649576908381641363263776'
+  market_type: MAP_WINNER
+  yes_team: Virtus.pro
+  no_team: Team Liquid
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 10:00:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vp-liquid-2026-05-15
+- name: 'Dota 2: REKONIX vs Tundra Esports - Game 1 Winner'
+  market_id: '2263559'
+  condition_id: '0x06e33e5c33dc500fa161cc02020e31f4b9d73f23baf60b3f75dd146bb6df7608'
+  yes_token_id: '46100646024921833124462666051410368081711601389652465873976562693941394286149'
+  no_token_id: '41539124799804943645442515710373156146299336941435836015137098808963035089268'
+  market_type: MAP_WINNER
+  yes_team: REKONIX
+  no_team: Tundra Esports
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-rnx-tundra-2026-05-15
+- name: 'Dota 2: REKONIX vs Tundra Esports - Game 2 Winner'
+  market_id: '2263560'
+  condition_id: '0xaae3556001081dbdd1349840ff0f81fc6762de0dd1ebff0cd48dc68994cabeba'
+  yes_token_id: '14252823199217775293994765254019626799931403865256573453464006537048378246742'
+  no_token_id: '20849129485138409111959953812625705619168256867581816712824186272646387847774'
+  market_type: MAP_WINNER
+  yes_team: REKONIX
+  no_team: Tundra Esports
+  outcome_order_verified: true
+  dota_match_id: STEAM_MATCH_OR_LOBBY_ID_HERE
+  confidence: 0.0
+  scheduled_start_utc: '2026-05-15 13:30:00+00'
+  source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-rnx-tundra-2026-05-15

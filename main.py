@@ -13,7 +13,7 @@ from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
 from signal_engine import EventSignalEngine, apply_probability_move
 from paper_trader import PaperTrader
-from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, LiveLeagueFeatureLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger, SignalMarkoutLogger
+from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, RichContextLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger, SignalMarkoutLogger
 from mapping import load_valid_mappings
 from event_detector import EventDetector
 from live_executor import LiveExecutor
@@ -234,7 +234,7 @@ async def steam_loop(
     live_executor: LiveExecutor | None,
     live_logger: LiveAttemptLogger | None,
     llg_raw_logger: LiveLeagueRawLogger,
-    llg_feature_logger: LiveLeagueFeatureLogger,
+    rich_context_logger: RichContextLogger,
     source_delay_logger: SourceDelayLogger,
     rescue_logger: BookRefreshRescueLogger,
     match_winner_logger: MatchWinnerSignalLogger,
@@ -341,12 +341,15 @@ async def steam_loop(
 
                     # Attach LiveLeague context as metadata (non-blocking,
                     # never changes expected_move/edge/sizing)
-                    llg_cache.attach_to_game(game, feature_logger=llg_feature_logger)
+                    llg_cache.attach_to_game(game)
 
                     # GetRealtimeStats is delayed rich context: heroes/player
                     # net worth/deaths/levels. It must not overwrite fast
                     # GetTopLiveGame duration, score, or radiant_lead.
                     await maybe_enrich_realtime(game, session)
+
+                    # Log the final enriched rich context for this match
+                    rich_context_logger.log_rich_context(game)
 
                     # Validate mapping identity against LLG context immediately
                     for mapping in mappings:
@@ -1162,7 +1165,7 @@ async def main():
     snapshot_logger = RawSnapshotLogger()
     latency_logger = LatencyLogger()
     llg_raw_logger = LiveLeagueRawLogger()
-    llg_feature_logger = LiveLeagueFeatureLogger()
+    rich_context_logger = RichContextLogger()
     source_delay_logger = SourceDelayLogger()
     llg_cache = LiveLeagueContextCache()
     live_logger = LiveAttemptLogger() if LIVE_TRADING else None
@@ -1208,7 +1211,7 @@ async def main():
         async with aiohttp.ClientSession() as session:
             await asyncio.gather(
                 listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
-                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, llg_feature_logger, source_delay_logger, rescue_logger, match_winner_logger, signal_markout_logger, llg_cache, mappings, asset_ids, model_bundle=model_bundle, http_session=session),
+                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, rich_context_logger, source_delay_logger, rescue_logger, match_winner_logger, signal_markout_logger, llg_cache, mappings, asset_ids, model_bundle=model_bundle, http_session=session),
             )
     except asyncio.CancelledError:
         pass
