@@ -1252,46 +1252,51 @@ async def main():
     for m in mappings:
         asset_ids.extend([m["yes_token_id"], m["no_token_id"]])
 
+    _exit_lock = asyncio.Lock()
+
     async def _check_live_exits(game_over_match_ids=None, adverse_token_ids=None):
         if not live_position_store or not live_exit_executor:
             return
         
-        game_over_match_ids = game_over_match_ids or set()
-        adverse_token_ids = adverse_token_ids or set()
-        
-        for pos in live_position_store.open_positions():
-            book = store.get(pos.token_id)
-            decision = decide_live_exit(
-                position=pos,
-                book=book,
-                game_over_match_ids=game_over_match_ids,
-                adverse_token_ids=adverse_token_ids,
-            )
-            if not decision.should_exit:
-                continue
+        async with _exit_lock:
+            game_over_match_ids = game_over_match_ids or set()
+            adverse_token_ids = adverse_token_ids or set()
+            
+            for pos in live_position_store.open_positions():
+                book = store.get(pos.token_id)
+                decision = decide_live_exit(
+                    position=pos,
+                    book=book,
+                    game_over_match_ids=game_over_match_ids,
+                    adverse_token_ids=adverse_token_ids,
+                )
+                if not decision.should_exit:
+                    continue
 
-            print(f"LIVE EXIT TRIGGERED: {pos.market_name} {pos.side} reason={decision.reason}")
-            live_position_store.mark_exiting(pos.position_id, decision.reason)
+                print(f"LIVE EXIT TRIGGERED: {pos.market_name} {pos.side} reason={decision.reason}")
+                live_position_store.mark_exiting(pos.position_id, decision.reason)
 
-            # Find mapping for this position to get tick_size/neg_risk
-            mapping = next((m for m in mappings if m.get("yes_token_id") == pos.token_id or m.get("no_token_id") == pos.token_id), {})
+                # Find mapping for this position to get tick_size/neg_risk
+                mapping = next((m for m in mappings if m.get("yes_token_id") == pos.token_id or m.get("no_token_id") == pos.token_id), {})
 
-            attempt = await live_exit_executor.try_exit(
-                position=pos,
-                book=book,
-                reason=decision.reason,
-                mapping=mapping,
-            )
+                attempt = await live_exit_executor.try_exit(
+                    position=pos,
+                    book=book,
+                    reason=decision.reason,
+                    mapping=mapping,
+                )
 
-            if live_exit_logger:
-                live_exit_logger.log_exit_attempt(attempt)
+                if live_exit_logger:
+                    live_exit_logger.log_exit_attempt(attempt)
 
-            if attempt.shares_filled >= pos.shares * 0.999:
-                live_position_store.mark_closed(pos.position_id)
-                print(f"LIVE EXIT FILLED: {pos.market_name} {pos.side} status={attempt.order_status}")
-            else:
-                live_position_store.mark_open_again(pos.position_id)
-                print(f"LIVE EXIT FAILED/PARTIAL: {pos.market_name} {pos.side} status={attempt.order_status}")
+                if attempt.shares_filled >= pos.shares * 0.999:
+                    live_position_store.mark_closed(pos.position_id)
+                    if live_executor:
+                        live_executor.decrement_open_positions()
+                    print(f"LIVE EXIT FILLED: {pos.market_name} {pos.side} status={attempt.order_status}")
+                else:
+                    live_position_store.mark_open_again(pos.position_id)
+                    print(f"LIVE EXIT FAILED/PARTIAL: {pos.market_name} {pos.side} status={attempt.order_status}")
 
     def _on_book_update():
         """Called after every Polymarket WS message. Checks TP/SL/horizon exits."""

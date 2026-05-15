@@ -153,6 +153,35 @@ def _avg_fill_price(resp: dict[str, Any], default_price: float, filled_usd: floa
     return default_price if filled_usd > 0 else None
 
 
+def _filled_shares_from_sell_response(resp: dict[str, Any], requested_shares: float) -> float:
+    """Best-effort filled-shares extraction for a SELL market order response.
+
+    Polymarket response schemas can differ by client version. For SELL, we want
+    to know exactly how many shares were disposed of.
+    """
+    explicit_keys = (
+        "filledShares", "filled_shares", "amountFilled", "filledAmount",
+        "filled", "filled_size", "shares",
+    )
+    for key in explicit_keys:
+        value = _to_float(resp.get(key))
+        if value is not None and value >= 0:
+            return min(value, requested_shares)
+
+    # If no explicit share fields, but we have taking/making, check if one matches shares
+    taking = _to_float(resp.get("takingAmount") or resp.get("taking_amount"))
+    making = _to_float(resp.get("makingAmount") or resp.get("making_amount"))
+    
+    # In a SELL, taking might be USDC and making might be shares, or vice-versa.
+    # We check if either is close to requested_shares.
+    if making is not None and requested_shares * 0.95 <= making <= requested_shares * 1.05:
+        return min(making, requested_shares)
+    if taking is not None and requested_shares * 0.95 <= taking <= requested_shares * 1.05:
+        return min(taking, requested_shares)
+
+    return 0.0
+
+
 @dataclass
 class LiveOrderAttempt:
     event_type: str
@@ -378,10 +407,7 @@ class LiveExitExecutor:
         attempt.order_status = _status_from_response(resp)
         attempt.reason_if_rejected = _error_from_response(resp)
 
-        # TODO: parse actual SELL fill fields after confirming client schema.
-        # For now, conservatively assuming success means full fill if status is matched-like.
-        if resp.get("success") is True and attempt.order_status.lower() in {"matched", "success", "live", "delayed"}:
-            attempt.shares_filled = position.shares
+        attempt.shares_filled = _filled_shares_from_sell_response(resp, position.shares)
 
         return attempt
 
@@ -403,6 +429,11 @@ class LiveExecutor:
 
     def _save(self):
         save_live_state(self.total_submitted_usd, self.total_filled_usd, self.open_positions)
+
+    def decrement_open_positions(self):
+        if self.open_positions > 0:
+            self.open_positions -= 1
+            self._save()
 
     def remaining_budget(self) -> float:
         return max(0.0, MAX_TOTAL_LIVE_USD - self.total_submitted_usd)
