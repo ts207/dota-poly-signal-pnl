@@ -1173,6 +1173,23 @@ async def main():
     rescue_logger = BookRefreshRescueLogger()
     match_winner_logger = MatchWinnerSignalLogger(log_dir="logs")
     signal_markout_logger = SignalMarkoutLogger()
+
+    # Collect all background CSV loggers for graceful flush on shutdown
+    loggers = [
+        signal_logger,
+        event_logger,
+        book_logger,
+        position_logger,
+        snapshot_logger,
+        latency_logger,
+        rich_context_logger,
+        source_delay_logger,
+        rescue_logger,
+        match_winner_logger,
+        signal_markout_logger,
+    ]
+    if live_logger:
+        loggers.append(live_logger)
     restored_positions = trader.load_open_positions(position_logger.filename)
     if restored_positions:
         print(f"Restored {restored_positions} open paper position(s) from {position_logger.filename}")
@@ -1216,6 +1233,14 @@ async def main():
     except asyncio.CancelledError:
         pass
     finally:
+        # Gracefully stop background loggers to ensure queued rows are flushed to disk
+        print(f"Flushing {len(loggers)} background loggers...")
+        for logger in loggers:
+            try:
+                logger.stop()
+            except Exception as e:
+                print(f"Error stopping logger {getattr(logger, 'filename', 'unknown')}: {e}")
+
         summary = trader.summary()
         print(f"\nSession summary: {summary}")
 

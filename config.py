@@ -36,6 +36,7 @@ MODE = os.getenv("MODE", "paper").lower()
 
 # Guarded live-path switch. Defaults to false; paper mode remains the default.
 LIVE_TRADING = os.getenv("LIVE_TRADING", "false").lower() in {"1", "true", "yes"}
+ENABLE_REAL_LIVE_TRADING = os.getenv("ENABLE_REAL_LIVE_TRADING", "false").lower() in {"1", "true", "yes"}
 MAX_TOTAL_LIVE_USD = float(os.getenv("MAX_TOTAL_LIVE_USD", "10"))
 MAX_TRADE_USD = float(os.getenv("MAX_TRADE_USD", "1"))
 MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "1"))
@@ -80,7 +81,7 @@ MAX_BOOK_AGE_MS = int(os.getenv("MAX_BOOK_AGE_MS", "750"))
 MIN_LAG = float(os.getenv("MIN_LAG", os.getenv("MIN_EDGE", "0.08")))
 MIN_EXECUTABLE_EDGE = float(os.getenv("MIN_EXECUTABLE_EDGE", "0.03"))
 MIN_ML_EDGE = float(os.getenv("MIN_ML_EDGE", "0.10"))
-ML_STRATEGY_ENABLED = os.getenv("ML_STRATEGY_ENABLED", "true").lower() in {"1", "true", "yes"}
+ML_STRATEGY_ENABLED = os.getenv("ML_STRATEGY_ENABLED", "false").lower() in {"1", "true", "yes"}
 PRICE_LOOKBACK_SEC = float(os.getenv("PRICE_LOOKBACK_SEC", "10"))
 DEFAULT_MAX_FILL_PRICE = float(os.getenv("DEFAULT_MAX_FILL_PRICE", "0.80"))
 MAX_SPREAD = float(os.getenv("MAX_SPREAD", "0.15"))
@@ -131,6 +132,7 @@ PNL_SUMMARY_CSV_PATH = os.getenv("PNL_SUMMARY_CSV_PATH", "logs/pnl_summary.csv")
 LATENCY_CSV_PATH = os.getenv("LATENCY_CSV_PATH", "logs/latency.csv")
 LIVE_LEAGUE_RAW_CSV_PATH = os.getenv("LIVE_LEAGUE_RAW_CSV_PATH", "logs/liveleague_raw.csv")
 RICH_CONTEXT_CSV_PATH = os.getenv("RICH_CONTEXT_CSV_PATH", os.getenv("LIVE_LEAGUE_FEATURES_CSV_PATH", "logs/rich_context.csv"))
+LIVE_LEAGUE_FEATURES_CSV_PATH = RICH_CONTEXT_CSV_PATH
 LIVE_LEAGUE_RAW_JSONL_PATH = os.getenv("LIVE_LEAGUE_RAW_JSONL_PATH", "logs/liveleague_raw.jsonl")
 SOURCE_DELAY_CSV_PATH = os.getenv("SOURCE_DELAY_CSV_PATH", "logs/source_delay.csv")
 MARKOUTS_CSV_PATH = os.getenv("MARKOUTS_CSV_PATH", "logs/markouts.csv")

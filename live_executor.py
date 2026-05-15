@@ -15,6 +15,7 @@ from config import (
     ALLOW_GAME_OVER_ONLY,
     DEFAULT_MAX_FILL_PRICE,
     DISABLE_STRUCTURE_TRADES,
+    ENABLE_REAL_LIVE_TRADING,
     LIVE_ORDER_TYPE,
     LIVE_ALLOWED_CADENCE_QUALITIES,
     LIVE_MIN_EVENT_QUALITY,
@@ -34,6 +35,7 @@ from config import (
 from event_taxonomy import event_tier
 from signal_engine import age_ms
 from mapping_validator import validate_mapping_identity
+from live_state import load_live_state, save_live_state
 
 STRUCTURE_EVENTS = frozenset({
     "OBJECTIVE_CONVERSION_T2",
@@ -265,9 +267,13 @@ class LiveExecutor:
 
     def __init__(self, client: Any | None = None):
         self.client = client or LiveCLOBClient()
-        self.total_submitted_usd = 0.0
-        self.total_filled_usd = 0.0
-        self.open_positions = 0
+        state = load_live_state()
+        self.total_submitted_usd = float(state.get("total_submitted_usd", 0.0))
+        self.total_filled_usd = float(state.get("total_filled_usd", 0.0))
+        self.open_positions = int(state.get("open_positions", 0))
+
+    def _save(self):
+        save_live_state(self.total_submitted_usd, self.total_filled_usd, self.open_positions)
 
     def remaining_budget(self) -> float:
         return max(0.0, MAX_TOTAL_LIVE_USD - self.total_submitted_usd)
@@ -396,6 +402,7 @@ class LiveExecutor:
             return self._reject(signal, mapping, game, "no_remaining_live_budget", price_cap=price_cap)
 
         self.total_submitted_usd += order_usd
+        self._save()
         neg_risk = bool(mapping.get("neg_risk", False))
         attempt = LiveOrderAttempt(
             event_type=event_type,
@@ -418,6 +425,12 @@ class LiveExecutor:
         )
 
         attempt.submit_start_ns = time.time_ns()
+        if not ENABLE_REAL_LIVE_TRADING:
+            attempt.response_received_ns = time.time_ns()
+            attempt.order_status = "would_be_live_skipped"
+            attempt.reason_if_rejected = "ENABLE_REAL_LIVE_TRADING is false"
+            return attempt
+
         try:
             resp = await self.client.buy_fak_market(
                 token_id=token_id,
@@ -446,4 +459,5 @@ class LiveExecutor:
         if attempt.filled_size_usd > 0:
             self.total_filled_usd += attempt.filled_size_usd
             self.open_positions += 1
+            self._save()
         return attempt

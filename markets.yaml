@@ -66,7 +66,7 @@ markets:
   yes_team: Team Falcons
   no_team: Virtus.pro
   dota_match_id: '8809158835'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-flc-vp-2026-05-13
   auto_mapped_at_utc: '2026-05-13T09:55:40+00:00'
@@ -83,7 +83,7 @@ markets:
   yes_team: Team Falcons
   no_team: Virtus.pro
   dota_match_id: '8809242493'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-flc-vp-2026-05-13
   auto_mapped_at_utc: '2026-05-13T11:34:50+00:00'
@@ -100,7 +100,7 @@ markets:
   yes_team: ex-HEROIC
   no_team: GamerLegion
   dota_match_id: '8809158915'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-gl-2026-05-13
   auto_mapped_at_utc: '2026-05-13T09:55:40+00:00'
@@ -117,7 +117,7 @@ markets:
   yes_team: ex-HEROIC
   no_team: GamerLegion
   dota_match_id: '8809246462'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-gl-2026-05-13
   auto_mapped_at_utc: '2026-05-13T11:38:45+00:00'
@@ -134,7 +134,7 @@ markets:
   yes_team: Team Spirit
   no_team: Vici Gaming
   dota_match_id: '8809159511'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ts8-vg-2026-05-13
   auto_mapped_at_utc: '2026-05-13T09:56:39+00:00'
@@ -151,7 +151,7 @@ markets:
   yes_team: Team Spirit
   no_team: Vici Gaming
   dota_match_id: '8809244962'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ts8-vg-2026-05-13
   auto_mapped_at_utc: '2026-05-13T11:37:47+00:00'
@@ -168,7 +168,7 @@ markets:
   yes_team: Natus Vincere
   no_team: Nigma Galaxy
   dota_match_id: '8809381476'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-navi-ngx-2026-05-13
   steam_radiant_team: 'Nigma Galaxy '
@@ -185,7 +185,7 @@ markets:
   yes_team: Natus Vincere
   no_team: Nigma Galaxy
   dota_match_id: '8809385333'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-navi-ngx-2026-05-13
   auto_mapped_at_utc: '2026-05-13T13:34:18+00:00'
@@ -202,7 +202,7 @@ markets:
   yes_team: Aurora
   no_team: Team Liquid
   dota_match_id: '8809166456'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-liquid-2026-05-13
   auto_mapped_at_utc: '2026-05-13T10:06:28+00:00'
@@ -219,7 +219,7 @@ markets:
   yes_team: Aurora
   no_team: Team Liquid
   dota_match_id: '8809227928'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-liquid-2026-05-13
   auto_mapped_at_utc: '2026-05-13T11:19:08+00:00'
@@ -236,7 +236,7 @@ markets:
   yes_team: Xtreme Gaming
   no_team: PlayTime
   dota_match_id: '8809536007'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-xtreme-playti-2026-05-13
   auto_mapped_at_utc: '2026-05-13T15:41:52+00:00'
@@ -253,7 +253,7 @@ markets:
   yes_team: Xtreme Gaming
   no_team: PlayTime
   dota_match_id: '8809634682'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-xtreme-playti-2026-05-13
   auto_mapped_at_utc: '2026-05-13T16:54:30+00:00'
@@ -270,7 +270,7 @@ markets:
   yes_team: PARIVISION
   no_team: Tundra Esports
   dota_match_id: '8809412954'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-tundra-2026-05-13
   auto_mapped_at_utc: '2026-05-13T13:54:53+00:00'
@@ -287,7 +287,7 @@ markets:
   yes_team: PARIVISION
   no_team: Tundra Esports
   dota_match_id: '8809504168'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-tundra-2026-05-13
   auto_mapped_at_utc: '2026-05-13T15:41:52+00:00'
@@ -304,7 +304,7 @@ markets:
   yes_team: ex-HEROIC
   no_team: Virtus.pro
   dota_match_id: '8809710774'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-vp-2026-05-13
   auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
@@ -321,7 +321,7 @@ markets:
   yes_team: ex-HEROIC
   no_team: Virtus.pro
   dota_match_id: '8809797141'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-vp-2026-05-13
   auto_mapped_at_utc: '2026-05-13T19:02:07+00:00'
@@ -338,7 +338,7 @@ markets:
   yes_team: Aurora
   no_team: Team Falcons
   dota_match_id: '8809656567'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-flc-2026-05-13
   auto_mapped_at_utc: '2026-05-13T16:56:28+00:00'
@@ -355,7 +355,7 @@ markets:
   yes_team: Aurora
   no_team: Team Falcons
   dota_match_id: '8809747666'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-flc-2026-05-13
   auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
@@ -372,7 +372,7 @@ markets:
   yes_team: BetBoom Team
   no_team: REKONIX
   dota_match_id: '8809373469'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-bb4-rnx-2026-05-13
   auto_mapped_at_utc: '2026-05-13T13:26:28+00:00'
@@ -401,7 +401,7 @@ markets:
   yes_team: GamerLegion
   no_team: Vici Gaming
   dota_match_id: '8809655926'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-gl-vg-2026-05-13
   auto_mapped_at_utc: '2026-05-13T16:55:29+00:00'
@@ -418,7 +418,7 @@ markets:
   yes_team: GamerLegion
   no_team: Vici Gaming
   dota_match_id: '8809726019'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-gl-vg-2026-05-13
   auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
@@ -435,7 +435,7 @@ markets:
   yes_team: Team Spirit
   no_team: Team Liquid
   dota_match_id: '8809696561'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ts8-liquid-2026-05-13
   auto_mapped_at_utc: '2026-05-13T18:39:47+00:00'
@@ -452,7 +452,7 @@ markets:
   yes_team: Team Spirit
   no_team: Team Liquid
   dota_match_id: '8809802771'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ts8-liquid-2026-05-13
   auto_mapped_at_utc: '2026-05-13T19:26:00+00:00'
@@ -469,7 +469,7 @@ markets:
   yes_team: PARIVISION
   no_team: BetBoom Team
   dota_match_id: '8810506148'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-bb4-2026-05-14
   auto_mapped_at_utc: '2026-05-14T12:56:30+00:00'
@@ -498,7 +498,7 @@ markets:
   yes_team: Natus Vincere
   no_team: REKONIX
   dota_match_id: '8810508497'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-navi-rnx-2026-05-14
   auto_mapped_at_utc: '2026-05-14T12:56:30+00:00'
@@ -527,7 +527,7 @@ markets:
   yes_team: Natus Vincere
   no_team: BetBoom Team
   dota_match_id: '8810894092'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-navi-bb4-2026-05-14
   auto_mapped_at_utc: '2026-05-14T16:55:46+00:00'
@@ -544,7 +544,7 @@ markets:
   yes_team: Natus Vincere
   no_team: BetBoom Team
   dota_match_id: '8810990695'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-navi-bb4-2026-05-14
   auto_mapped_at_utc: '2026-05-14T18:16:41+00:00'
@@ -585,7 +585,7 @@ markets:
   yes_team: ex-HEROIC
   no_team: Team Falcons
   dota_match_id: '8810614945'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-flc-2026-05-14
   auto_mapped_at_utc: '2026-05-14T13:36:37+00:00'
@@ -602,7 +602,7 @@ markets:
   yes_team: ex-HEROIC
   no_team: Team Falcons
   dota_match_id: '8810753165'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-heroic2-flc-2026-05-14
   auto_mapped_at_utc: '2026-05-14T15:10:20+00:00'
@@ -619,7 +619,7 @@ markets:
   yes_team: Xtreme Gaming
   no_team: Tundra Esports
   dota_match_id: '8810452708'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 10:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-xtreme-tundra-2026-05-14
   auto_mapped_at_utc: '2026-05-14T12:56:30+00:00'
@@ -648,7 +648,7 @@ markets:
   yes_team: Aurora
   no_team: Team Spirit
   dota_match_id: '8810600432'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-ts8-2026-05-14
   auto_mapped_at_utc: '2026-05-14T13:25:52+00:00'
@@ -665,7 +665,7 @@ markets:
   yes_team: Aurora
   no_team: Team Spirit
   dota_match_id: '8810706519'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-aur1-ts8-2026-05-14
   auto_mapped_at_utc: '2026-05-14T14:38:08+00:00'
@@ -682,7 +682,7 @@ markets:
   yes_team: GamerLegion
   no_team: Team Liquid
   dota_match_id: '8810642364'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-gl-liquid-2026-05-14
   auto_mapped_at_utc: '2026-05-14T13:55:08+00:00'
@@ -699,7 +699,7 @@ markets:
   yes_team: GamerLegion
   no_team: Team Liquid
   dota_match_id: '8810792178'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-gl-liquid-2026-05-14
   auto_mapped_at_utc: '2026-05-14T15:37:36+00:00'
@@ -730,7 +730,7 @@ markets:
   no_team: Grind Back
   outcome_order_verified: true
   dota_match_id: '8809103888'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-13 07:15:00+00'
   source_url: https://polymarket.com/esports/dota-2/epl-world-series/dota2-glyph-grind-2026-05-13
 - name: 'Dota 2: Vici Gaming vs Virtus.pro - Game 1 Winner'
@@ -743,7 +743,7 @@ markets:
   no_team: Virtus.pro
   outcome_order_verified: true
   dota_match_id: '8810636217'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vg-vp-2026-05-14
   auto_mapped_at_utc: '2026-05-14T13:51:14+00:00'
@@ -761,7 +761,7 @@ markets:
   no_team: Virtus.pro
   outcome_order_verified: true
   dota_match_id: '8810741766'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 13:30:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-vg-vp-2026-05-14
   auto_mapped_at_utc: '2026-05-14T15:01:32+00:00'
@@ -779,7 +779,7 @@ markets:
   no_team: Xtreme Gaming
   outcome_order_verified: true
   dota_match_id: '8810894235'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ngx-tundra-2026-05-14
   auto_mapped_at_utc: '2026-05-14T16:55:46+00:00'
@@ -811,7 +811,7 @@ markets:
   series_score_no: 1
   p_next_yes: 0.5
   dota_match_id: '8809888784'
-  confidence: 1.0
+  confidence: 0.0
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ts8-liquid-2026-05-13
   auto_mapped_at_utc: '2026-05-13T20:45:20+00:00'
   auto_mapped_source: live_league
@@ -932,7 +932,7 @@ markets:
   no_team: Xtreme Gaming
   series_type: 1
   dota_match_id: '8811095968'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-xtreme-2026-05-14
   auto_mapped_at_utc: '2026-05-14T19:53:00+00:00'
@@ -950,7 +950,7 @@ markets:
   no_team: REKONIX
   series_type: 1
   dota_match_id: '8810894132'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-playti-rnx-2026-05-14
   auto_mapped_at_utc: '2026-05-14T16:55:46+00:00'
@@ -968,7 +968,7 @@ markets:
   no_team: Tundra Esports
   series_type: 1
   dota_match_id: '8811075585'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ngx-tundra-2026-05-14
   auto_mapped_at_utc: '2026-05-14T19:32:35+00:00'
@@ -999,7 +999,7 @@ markets:
   no_team: Tundra Esports
   outcome_order_verified: true
   dota_match_id: '8810895940'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ngx-tundra-2026-05-14
   auto_mapped_at_utc: '2026-05-14T16:57:43+00:00'
@@ -1017,7 +1017,7 @@ markets:
   no_team: Xtreme Gaming
   outcome_order_verified: true
   dota_match_id: '8810989536'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-pari-xtreme-2026-05-14
   auto_mapped_at_utc: '2026-05-14T18:15:27+00:00'
@@ -1035,7 +1035,7 @@ markets:
   no_team: Tundra Esports
   outcome_order_verified: true
   dota_match_id: '8810991986'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-ngx-tundra-2026-05-14
   auto_mapped_at_utc: '2026-05-14T18:17:39+00:00'
@@ -1053,7 +1053,7 @@ markets:
   no_team: REKONIX
   outcome_order_verified: true
   dota_match_id: '8811000876'
-  confidence: 1.0
+  confidence: 0.0
   scheduled_start_utc: '2026-05-14 17:00:00+00'
   source_url: https://polymarket.com/esports/dota-2/dreamleague/dota2-playti-rnx-2026-05-14
   auto_mapped_at_utc: '2026-05-14T18:25:29+00:00'
