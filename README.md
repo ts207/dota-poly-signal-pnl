@@ -167,6 +167,7 @@ Recommended first live settings:
 
 ```bash
 LIVE_TRADING=true \
+ENABLE_REAL_LIVE_TRADING=false \
 MAX_TOTAL_LIVE_USD=10 \
 MAX_TRADE_USD=1 \
 MAX_OPEN_POSITIONS=1 \
@@ -187,6 +188,12 @@ MAX_BOOK_AGE_MS=1000 \
 MAX_STEAM_AGE_MS=1500 \
 python main.py
 ```
+
+Keep `ENABLE_REAL_LIVE_TRADING=false` for the first live-path rehearsal. This
+starts the guarded live path and logs would-be live attempts without submitting
+orders. Set `ENABLE_REAL_LIVE_TRADING=true` only for the intentional real $10
+order-flow test after `logs/live_attempts.csv` shows clean prechecks on real
+current markets.
 
 The live executor sends only capped BUY market orders using FAK/FOK semantics. For
 BUY orders, `price` is used as the worst acceptable price cap. The code computes:

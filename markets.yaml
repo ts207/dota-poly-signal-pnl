@@ -796,7 +796,7 @@ markets:
   yes_team: Team Spirit
   no_team: Team Liquid
   dota_match_id: '8809888784'
-  confidence: 1.0
+  confidence: 0.0
 - name: 'Dota 2: Team Spirit vs Team Liquid (BO3) - DreamLeague Group A'
   market_id: '2235806'
   condition_id: '0x06e3a0f10c648b2d3939bf6532342c422050e35ff4f75adc98b091f6502c6f92'
