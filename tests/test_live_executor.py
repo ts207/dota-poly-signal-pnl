@@ -76,9 +76,14 @@ def test_round_down_to_tick():
     assert round_down_to_tick(0.6789, "0.01") == 0.67
     assert round_down_to_tick(0.6789, "0.001") == 0.678
 
+@pytest.fixture(autouse=True)
+def clean_live_state(monkeypatch):
+    monkeypatch.setattr("live_executor.load_live_state", lambda: {"total_submitted_usd": 0.0, "total_filled_usd": 0.0, "open_positions": 0})
+    monkeypatch.setattr("live_executor.save_live_state", lambda *a, **kw: None)
 
 @pytest.mark.asyncio
-async def test_live_executor_sends_capped_fak_buy():
+async def test_live_executor_sends_capped_fak_buy(monkeypatch):
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
     client = FakeLiveClient()
     executor = LiveExecutor(client=client)
     attempt = await executor.try_buy(
@@ -93,7 +98,8 @@ async def test_live_executor_sends_capped_fak_buy():
 
 
 @pytest.mark.asyncio
-async def test_live_executor_allows_tier_b_event_by_default():
+async def test_live_executor_allows_tier_b_event_by_default(monkeypatch):
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
     client = FakeLiveClient()
     executor = LiveExecutor(client=client)
     attempt = await executor.try_buy(
@@ -169,6 +175,7 @@ async def test_live_executor_rejects_if_ask_above_price_cap():
 
 @pytest.mark.asyncio
 async def test_live_executor_budget_caps_after_ten_attempts(monkeypatch):
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
     monkeypatch.setattr("live_executor.MAX_OPEN_POSITIONS", 999)
     client = FakeLiveClient()
     executor = LiveExecutor(client=client)
@@ -187,7 +194,8 @@ async def test_live_executor_budget_caps_after_ten_attempts(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_live_executor_uses_event_specific_max_fill_above_default():
+async def test_live_executor_uses_event_specific_max_fill_above_default(monkeypatch):
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
     client = FakeLiveClient()
     executor = LiveExecutor(client=client)
     sig = _signal(
@@ -238,6 +246,9 @@ async def test_live_executor_rejects_tier_c_by_default(monkeypatch):
     monkeypatch.setattr("live_executor.TRADE_EVENTS", {"OBJECTIVE_CONVERSION_T2"})
     monkeypatch.setattr("live_executor.ALLOW_CONFIRMATION_ONLY_LIVE_TRADES", False)
     monkeypatch.setattr("live_executor.DISABLE_STRUCTURE_TRADES", False)
+    # Monkeypatch event_tier or TIER_C_EVENTS to make OBJECTIVE_CONVERSION_T2 a Tier C event for this test
+    monkeypatch.setattr("live_executor.event_tier", lambda e: "C" if e == "OBJECTIVE_CONVERSION_T2" else "unknown")
+    
     executor = LiveExecutor(client=FakeLiveClient())
     attempt = await executor.try_buy(
         signal=_signal(event_type="OBJECTIVE_CONVERSION_T2", cluster_event_types="OBJECTIVE_CONVERSION_T2"),

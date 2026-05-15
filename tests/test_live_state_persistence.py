@@ -106,6 +106,7 @@ async def test_live_executor_budget_cap_persists(monkeypatch, tmp_path):
     state_file = tmp_path / "live_state.json"
     monkeypatch.setattr("live_state.LIVE_STATE_PATH", str(state_file))
     monkeypatch.setattr("live_executor.MAX_TOTAL_LIVE_USD", 10.0)
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
     
     # Save a state that already reached the cap
     save_live_state(total_submitted_usd=10.0, total_filled_usd=5.0, open_positions=5)
@@ -118,3 +119,43 @@ async def test_live_executor_budget_cap_persists(monkeypatch, tmp_path):
     )
     assert attempt.order_status == "rejected_precheck"
     assert attempt.reason_if_rejected == "max_total_live_usd_reached"
+
+@pytest.mark.asyncio
+async def test_live_executor_dry_run_does_not_persist(monkeypatch, tmp_path):
+    state_file = tmp_path / "live_state_dry.json"
+    monkeypatch.setattr("live_state.LIVE_STATE_PATH", str(state_file))
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", False)
+    
+    if state_file.exists():
+        state_file.unlink()
+
+    executor = LiveExecutor(client=FakeLiveClient())
+    
+    await executor.try_buy(
+        signal=_signal(), mapping=_mapping(), game=_game(), book_store=FakeBookStore()
+    )
+    
+    # Dry run should not increment these
+    assert executor.total_submitted_usd == 0.0
+    assert not state_file.exists()
+
+@pytest.mark.asyncio
+async def test_live_executor_real_mode_with_fake_client_persists(monkeypatch, tmp_path):
+    state_file = tmp_path / "live_state_real_fake.json"
+    monkeypatch.setattr("live_state.LIVE_STATE_PATH", str(state_file))
+    monkeypatch.setattr("live_executor.ENABLE_REAL_LIVE_TRADING", True)
+    
+    if state_file.exists():
+        state_file.unlink()
+
+    executor = LiveExecutor(client=FakeLiveClient())
+    
+    await executor.try_buy(
+        signal=_signal(), mapping=_mapping(), game=_game(), book_store=FakeBookStore()
+    )
+    
+    assert executor.total_submitted_usd == 1.0
+    assert state_file.exists()
+    with open(state_file, "r") as f:
+        data = json.load(f)
+        assert data["total_submitted_usd"] == 1.0

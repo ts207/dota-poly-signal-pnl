@@ -563,6 +563,23 @@ class LiveAttemptLogger(CsvLogger):
         self.append(d)
 
 
+class LiveExitLogger(CsvLogger):
+    def __init__(self, filename: str = "logs/live_exits.csv"):
+        super().__init__(filename, [
+            "timestamp_utc",
+            "position_id", "token_id", "match_id", "reason",
+            "shares_requested", "shares_filled", "best_bid", "price_floor",
+            "order_status", "reason_if_rejected",
+            "submit_start_ns", "response_received_ns", "submit_latency_ms",
+            "raw_response_json",
+        ])
+
+    def log_exit_attempt(self, attempt) -> None:
+        d = attempt.to_dict() if hasattr(attempt, "to_dict") else dict(attempt)
+        d["timestamp_utc"] = utc_now_iso()
+        self.append(d)
+
+
 class BookRefreshRescueLogger(CsvLogger):
     def __init__(self, filename: str = BOOK_REFRESH_RESCUE_CSV_PATH):
         super().__init__(filename, [

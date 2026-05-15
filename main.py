@@ -13,10 +13,12 @@ from steam_client import fetch_all_live_games, LeagueGameCache
 from poly_ws import listen_books, BookStore
 from signal_engine import EventSignalEngine, apply_probability_move
 from paper_trader import PaperTrader
-from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, RichContextLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger, SignalMarkoutLogger
+from storage import SignalLogger, DotaEventLogger, BookEventLogger, PositionLogger, RawSnapshotLogger, LiveAttemptLogger, LatencyLogger, LiveLeagueRawLogger, RichContextLogger, SourceDelayLogger, BookRefreshRescueLogger, MatchWinnerSignalLogger, SignalMarkoutLogger, LiveExitLogger
 from mapping import load_valid_mappings
 from event_detector import EventDetector
-from live_executor import LiveExecutor
+from live_executor import LiveExecutor, LiveExitExecutor
+from live_position_store import LivePositionStore, LivePosition
+from live_exit_engine import decide_live_exit
 from liveleague_features import LiveLeagueContextCache, classify_liveleague_lag
 from mapping_validator import validate_mapping_identity
 from hybrid_nowcast import compute_hybrid_nowcast
@@ -244,6 +246,10 @@ async def steam_loop(
     asset_ids: list[str],
     model_bundle: Any | None = None,
     http_session: aiohttp.ClientSession | None = None,
+    live_position_store: LivePositionStore | None = None,
+    live_exit_executor: LiveExitExecutor | None = None,
+    live_exit_logger: LiveExitLogger | None = None,
+    check_live_exits_fn: Any | None = None,
 ):
     if not STEAM_API_KEY or STEAM_API_KEY == "replace_me":
         print("Missing STEAM_API_KEY. Copy .env.example to .env and fill it in.")
@@ -410,6 +416,8 @@ async def steam_loop(
                     game_over_match_ids,
                     current_game_times,
                 )
+                if check_live_exits_fn:
+                    asyncio.create_task(check_live_exits_fn(game_over_match_ids=game_over_match_ids))
                 for cp in closed:
                     position_logger.log_exit(cp)
                     print(
@@ -813,6 +821,14 @@ async def steam_loop(
                                         f"ADVERSE EXIT {mapping['name']} {cp.side} "
                                         f"pnl=${cp.pnl_usd:+.2f} hold={cp.hold_sec:.0f}s"
                                     )
+                                
+                                if check_live_exits_fn and signal.get("event_is_primary"):
+                                    favored_token_id = signal.get("token_id")
+                                    if favored_token_id:
+                                        yes_token = mapping.get("yes_token_id")
+                                        no_token = mapping.get("no_token_id")
+                                        opposing_token = no_token if favored_token_id == yes_token else yes_token
+                                        asyncio.create_task(check_live_exits_fn(adverse_token_ids={opposing_token}))
 
                                 if mapping.get("market_type") == "MATCH_WINNER":
                                     # Task 4: Match Winner research mode sidecar
@@ -964,6 +980,28 @@ async def steam_loop(
                                     )
                                     if attempt.submitted_size_usd > 0:
                                         signal_engine.commit_signal(signal)
+                                    
+                                    if attempt.filled_size_usd > 0 and attempt.avg_fill_price and live_position_store:
+                                        shares = attempt.filled_size_usd / attempt.avg_fill_price
+                                        pos_id = f"{attempt.match_id}:{attempt.token_id}:{attempt.created_at_ns}"
+                                        live_pos = LivePosition(
+                                            position_id=pos_id,
+                                            state="OPEN",
+                                            token_id=attempt.token_id,
+                                            opposing_token_id=opposing_tok,
+                                            match_id=attempt.match_id,
+                                            market_name=mapping.get("name"),
+                                            side=tok_side,
+                                            entry_price=attempt.avg_fill_price,
+                                            shares=shares,
+                                            cost_usd=attempt.filled_size_usd,
+                                            entry_time_ns=attempt.created_at_ns,
+                                            entry_game_time_sec=game.get("game_time_sec"),
+                                            event_type=signal.get("event_type") or "",
+                                            expected_move=signal.get("expected_move") or 0.0,
+                                            fair_price=signal.get("fair_price") or 0.0,
+                                        )
+                                        live_position_store.add(live_pos)
                                 else:
                                     paper_attempt_ns = time.time_ns()
                                     if PAPER_EXECUTION_DELAY_MS > 0:
@@ -1170,6 +1208,9 @@ async def main():
     llg_cache = LiveLeagueContextCache()
     live_logger = LiveAttemptLogger() if LIVE_TRADING else None
     live_executor = LiveExecutor() if LIVE_TRADING else None
+    live_position_store = LivePositionStore() if LIVE_TRADING else None
+    live_exit_executor = LiveExitExecutor() if LIVE_TRADING else None
+    live_exit_logger = LiveExitLogger() if LIVE_TRADING else None
     rescue_logger = BookRefreshRescueLogger()
     match_winner_logger = MatchWinnerSignalLogger(log_dir="logs")
     signal_markout_logger = SignalMarkoutLogger()
@@ -1190,6 +1231,8 @@ async def main():
     ]
     if live_logger:
         loggers.append(live_logger)
+    if live_exit_logger:
+        loggers.append(live_exit_logger)
     restored_positions = trader.load_open_positions(position_logger.filename)
     if restored_positions:
         print(f"Restored {restored_positions} open paper position(s) from {position_logger.filename}")
@@ -1209,6 +1252,47 @@ async def main():
     for m in mappings:
         asset_ids.extend([m["yes_token_id"], m["no_token_id"]])
 
+    async def _check_live_exits(game_over_match_ids=None, adverse_token_ids=None):
+        if not live_position_store or not live_exit_executor:
+            return
+        
+        game_over_match_ids = game_over_match_ids or set()
+        adverse_token_ids = adverse_token_ids or set()
+        
+        for pos in live_position_store.open_positions():
+            book = store.get(pos.token_id)
+            decision = decide_live_exit(
+                position=pos,
+                book=book,
+                game_over_match_ids=game_over_match_ids,
+                adverse_token_ids=adverse_token_ids,
+            )
+            if not decision.should_exit:
+                continue
+
+            print(f"LIVE EXIT TRIGGERED: {pos.market_name} {pos.side} reason={decision.reason}")
+            live_position_store.mark_exiting(pos.position_id, decision.reason)
+
+            # Find mapping for this position to get tick_size/neg_risk
+            mapping = next((m for m in mappings if m.get("yes_token_id") == pos.token_id or m.get("no_token_id") == pos.token_id), {})
+
+            attempt = await live_exit_executor.try_exit(
+                position=pos,
+                book=book,
+                reason=decision.reason,
+                mapping=mapping,
+            )
+
+            if live_exit_logger:
+                live_exit_logger.log_exit_attempt(attempt)
+
+            if attempt.shares_filled >= pos.shares * 0.999:
+                live_position_store.mark_closed(pos.position_id)
+                print(f"LIVE EXIT FILLED: {pos.market_name} {pos.side} status={attempt.order_status}")
+            else:
+                live_position_store.mark_open_again(pos.position_id)
+                print(f"LIVE EXIT FAILED/PARTIAL: {pos.market_name} {pos.side} status={attempt.order_status}")
+
     def _on_book_update():
         """Called after every Polymarket WS message. Checks TP/SL/horizon exits."""
         for cp in trader.check_exits(store, set(), None):
@@ -1218,6 +1302,8 @@ async def main():
                 f"entry={cp.entry_price:.4f} exit={cp.exit_price:.4f} "
                 f"pnl=${cp.pnl_usd:+.2f} hold={cp.hold_sec:.0f}s"
             )
+        if live_position_store:
+            asyncio.create_task(_check_live_exits())
 
     if LIVE_TRADING:
         print(f"Starting GUARDED LIVE TEST with {len(mappings)} active mapping(s). $10 hard cap is enforced by LiveExecutor.")
@@ -1228,7 +1314,18 @@ async def main():
         async with aiohttp.ClientSession() as session:
             await asyncio.gather(
                 listen_books(asset_ids, store, book_logger=book_logger, on_book_update=_on_book_update),
-                steam_loop(store, trader, signal_logger, event_detector, signal_engine, event_logger, position_logger, snapshot_logger, latency_logger, live_executor, live_logger, llg_raw_logger, rich_context_logger, source_delay_logger, rescue_logger, match_winner_logger, signal_markout_logger, llg_cache, mappings, asset_ids, model_bundle=model_bundle, http_session=session),
+                steam_loop(
+                    store, trader, signal_logger, event_detector, signal_engine,
+                    event_logger, position_logger, snapshot_logger, latency_logger,
+                    live_executor, live_logger, llg_raw_logger, rich_context_logger,
+                    source_delay_logger, rescue_logger, match_winner_logger,
+                    signal_markout_logger, llg_cache, mappings, asset_ids,
+                    model_bundle=model_bundle, http_session=session,
+                    live_position_store=live_position_store,
+                    live_exit_executor=live_exit_executor,
+                    live_exit_logger=live_exit_logger,
+                    check_live_exits_fn=_check_live_exits,
+                ),
             )
     except asyncio.CancelledError:
         pass

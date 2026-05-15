@@ -256,6 +256,135 @@ class LiveCLOBClient:
         )
         return _response_to_dict(resp)
 
+    async def sell_fak_market(
+        self,
+        *,
+        token_id: str,
+        shares: float,
+        price_floor: float,
+        tick_size: str,
+        neg_risk: bool,
+    ) -> dict[str, Any]:
+        order_type = getattr(self._OrderType, LIVE_ORDER_TYPE)
+        side_sell = getattr(self._Side, "SELL")
+
+        order_args = self._MarketOrderArgs(
+            token_id=str(token_id),
+            amount=float(shares),
+            side=side_sell,
+            price=float(price_floor),
+        )
+
+        options = self._Options(tick_size=str(tick_size), neg_risk=bool(neg_risk))
+
+        resp = await asyncio.to_thread(
+            self._client.create_and_post_market_order,
+            order_args=order_args,
+            options=options,
+            order_type=order_type,
+        )
+        return _response_to_dict(resp)
+
+
+@dataclass
+class LiveExitAttempt:
+    position_id: str
+    token_id: str
+    match_id: str
+    reason: str
+    shares_requested: float
+    shares_filled: float
+    best_bid: float | None
+    price_floor: float | None
+    order_status: str
+    reason_if_rejected: str = ""
+    raw_response_json: str = ""
+    submit_start_ns: int | None = None
+    response_received_ns: int | None = None
+    submit_latency_ms: float | None = None
+
+    def to_dict(self):
+        return asdict(self)
+
+
+class LiveExitExecutor:
+    def __init__(self, client: Any | None = None):
+        self.client = client
+
+    async def try_exit(self, *, position: Any, book: dict | None, reason: str, mapping: dict) -> LiveExitAttempt:
+        bid = book.get("best_bid") if book else None
+        if bid is None:
+            return LiveExitAttempt(
+                position_id=position.position_id,
+                token_id=position.token_id,
+                match_id=position.match_id,
+                reason=reason,
+                shares_requested=position.shares,
+                shares_filled=0.0,
+                best_bid=None,
+                price_floor=None,
+                order_status="rejected_precheck",
+                reason_if_rejected="missing_bid",
+            )
+
+        tick_size = str(mapping.get("tick_size") or LIVE_TICK_SIZE)
+        price_floor = round_down_to_tick(max(float(bid) - 0.01, 0.01), tick_size)
+
+        attempt = LiveExitAttempt(
+            position_id=position.position_id,
+            token_id=position.token_id,
+            match_id=position.match_id,
+            reason=reason,
+            shares_requested=position.shares,
+            shares_filled=0.0,
+            best_bid=float(bid),
+            price_floor=price_floor,
+            order_status="not_submitted",
+        )
+
+        attempt.submit_start_ns = time.time_ns()
+        if not ENABLE_REAL_LIVE_TRADING:
+            attempt.response_received_ns = time.time_ns()
+            attempt.order_status = "would_be_live_skipped"
+            attempt.reason_if_rejected = "ENABLE_REAL_LIVE_TRADING is false"
+            return attempt
+
+        if self.client is None:
+            self.client = LiveCLOBClient()
+
+        try:
+            resp = await self.client.sell_fak_market(
+                token_id=position.token_id,
+                shares=position.shares,
+                price_floor=price_floor,
+                tick_size=tick_size,
+                neg_risk=bool(mapping.get("neg_risk", False)),
+            )
+            attempt.response_received_ns = time.time_ns()
+        except Exception as exc:
+            attempt.response_received_ns = time.time_ns()
+            attempt.order_status = "exception"
+            attempt.reason_if_rejected = repr(exc)
+            if attempt.submit_start_ns and attempt.response_received_ns:
+                attempt.submit_latency_ms = round((attempt.response_received_ns - attempt.submit_start_ns) / 1_000_000, 2)
+            return attempt
+
+        if attempt.submit_start_ns and attempt.response_received_ns:
+            attempt.submit_latency_ms = round(
+                (attempt.response_received_ns - attempt.submit_start_ns) / 1_000_000,
+                2,
+            )
+        attempt.raw_response_json = json.dumps(_jsonable(resp), sort_keys=True)[:4000]
+        attempt.order_status = _status_from_response(resp)
+        attempt.reason_if_rejected = _error_from_response(resp)
+
+        # TODO: parse actual SELL fill fields after confirming client schema.
+        # For now, conservatively assuming success means full fill if status is matched-like.
+        if resp.get("success") is True and attempt.order_status.lower() in {"matched", "success", "live", "delayed"}:
+            attempt.shares_filled = position.shares
+
+        return attempt
+
 
 class LiveExecutor:
     """Guarded $10 live-test executor.
@@ -266,7 +395,7 @@ class LiveExecutor:
     """
 
     def __init__(self, client: Any | None = None):
-        self.client = client or LiveCLOBClient()
+        self.client = client
         state = load_live_state()
         self.total_submitted_usd = float(state.get("total_submitted_usd", 0.0))
         self.total_filled_usd = float(state.get("total_filled_usd", 0.0))
@@ -401,8 +530,6 @@ class LiveExecutor:
         if order_usd <= 0:
             return self._reject(signal, mapping, game, "no_remaining_live_budget", price_cap=price_cap)
 
-        self.total_submitted_usd += order_usd
-        self._save()
         neg_risk = bool(mapping.get("neg_risk", False))
         attempt = LiveOrderAttempt(
             event_type=event_type,
@@ -430,6 +557,13 @@ class LiveExecutor:
             attempt.order_status = "would_be_live_skipped"
             attempt.reason_if_rejected = "ENABLE_REAL_LIVE_TRADING is false"
             return attempt
+
+        # Real trading attempt: consume budget and ensure client is loaded
+        if self.client is None:
+            self.client = LiveCLOBClient()
+
+        self.total_submitted_usd += order_usd
+        self._save()
 
         try:
             resp = await self.client.buy_fak_market(
