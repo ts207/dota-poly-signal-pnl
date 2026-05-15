@@ -366,6 +366,12 @@ async def steam_loop(
                     # GetTopLiveGame duration, score, or radiant_lead.
                     await maybe_enrich_realtime(game, session)
 
+                    # Inject team win ratios from historical stats
+                    r_id = str(game.get("radiant_team_id") or "")
+                    d_id = str(game.get("dire_team_id") or "")
+                    game["radiant_team_win_ratio"] = team_stats.get(r_id, 0.5)
+                    game["dire_team_win_ratio"] = team_stats.get(d_id, 0.5)
+
                     # Log the final enriched rich context for this match
                     rich_context_logger.log_rich_context(game)
 
@@ -709,10 +715,9 @@ async def steam_loop(
                                         _rescue_row["markout_3s"] = None
                                         _rescue_row["markout_10s"] = None
                                         _rescue_row["markout_30s"] = None
-                                        if _fresh_signal.get("decision") == "paper_buy_yes":
-                                            signal = _fresh_signal
-                                            yes_book = _fresh_yes_book
-                                            no_book = _fresh_no_book
+                                        signal = _fresh_signal
+                                        yes_book = _fresh_yes_book
+                                        no_book = _fresh_no_book
                                     else:
                                         _rescue_row["refresh_latency_ms"] = None
                                         _rescue_row["fresh_bid"] = None
@@ -1362,6 +1367,49 @@ async def main():
                 print(f"Error in live_exit_loop: {e}")
             await asyncio.sleep(0.5)
 
+    async def proactive_refresh_loop(session: aiohttp.ClientSession):
+        """Proactively refreshes books for Tier A/B markets in active matches to prevent staleness rejections."""
+        # Only refresh if the local book is older than this (15s)
+        STALE_THRESHOLD_MS = 15000
+        while True:
+            try:
+                # Iterate over mappings that are linked to a match
+                seen_tokens = set()
+                for m in mappings:
+                    if not m.get("dota_match_id"):
+                        continue
+                    
+                    # We only care about markets that are currently being monitored in the WS
+                    # (asset_ids contains everything from all valid mappings)
+                    
+                    for tok_id in [m["yes_token_id"], m["no_token_id"]]:
+                        if tok_id in seen_tokens:
+                            continue
+                        seen_tokens.add(tok_id)
+                        
+                        book = store.get(tok_id)
+                        age = age_ms(book.get("received_at_ns")) if book else float("inf")
+                        
+                        if age > STALE_THRESHOLD_MS:
+                            # Use a short timeout to avoid hanging the loop
+                            fresh = await fetch_fresh_book(session, tok_id, timeout_ms=1500)
+                            if fresh:
+                                store.update_direct(
+                                    tok_id,
+                                    best_bid=fresh.get("best_bid"),
+                                    best_ask=fresh.get("best_ask"),
+                                    bid_size=fresh.get("bid_size"),
+                                    ask_size=fresh.get("ask_size"),
+                                )
+                                # Log to bot.log occasionally or at debug level if needed
+                                # print(f"PROACTIVE_REFRESH {tok_id} (age={age:.0f}ms)")
+                
+            except Exception as e:
+                print(f"Error in proactive_refresh_loop: {e}")
+            
+            # Wait between cycles. 10s is safe and keeps the book reasonably fresh.
+            await asyncio.sleep(10.0)
+
     if LIVE_TRADING:
         print(f"Starting GUARDED LIVE TEST with {len(mappings)} active mapping(s). $10 hard cap is enforced by LiveExecutor.")
     else:
@@ -1384,6 +1432,7 @@ async def main():
                     check_live_exits_fn=_check_live_exits,
                     shadow_logger=shadow_logger,
                 ),
+                proactive_refresh_loop(session),
             ]
             if LIVE_TRADING:
                 tasks.append(live_exit_loop())

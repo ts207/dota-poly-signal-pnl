@@ -222,14 +222,15 @@ def test_already_repriced_skip_keeps_side_metadata():
     now_ns = time.time_ns()
     engine = EventSignalEngine()
     engine.record_price(TOKEN_YES, 0.45)
-    engine._price_history[TOKEN_YES][0] = (int(time.time() * 1000) - 31_000, 0.45)
-    engine.record_price(TOKEN_YES, 0.55)
+    # Move the anchor back to 6s ago (instead of 31s) to match the new 5s repricing check.
+    engine._price_history[TOKEN_YES][0] = (int(time.time() * 1000) - 6_000, 0.45)
+    engine.record_price(TOKEN_YES, 0.58)  # Move > 0.12 (1.5 * 0.08)
 
     result = engine.evaluate_cluster(
         [_event()],
         _game(now_ns),
         _mapping(),
-        _book(now_ns, ask=0.56, bid=0.54),
+        _book(now_ns, ask=0.59, bid=0.57),
         None,
     )
 

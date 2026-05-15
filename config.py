@@ -90,12 +90,12 @@ MAX_STEAM_AGE_MS = int(os.getenv("MAX_STEAM_AGE_MS", "1500"))
 # these guards prevent paper trades from slower/stale Dota sources.
 # stream_delay_s is spectator/broadcast delay metadata only; it is logged, not used as a skip guard.
 REQUIRE_TOP_LIVE_FOR_SIGNALS = os.getenv("REQUIRE_TOP_LIVE_FOR_SIGNALS", "true").lower() in {"1", "true", "yes"}
-MAX_SOURCE_UPDATE_AGE_SEC = float(os.getenv("MAX_SOURCE_UPDATE_AGE_SEC", "45"))
-MAX_BOOK_AGE_MS = int(os.getenv("MAX_BOOK_AGE_MS", "750"))
+MAX_SOURCE_UPDATE_AGE_SEC = float(os.getenv("MAX_SOURCE_UPDATE_AGE_SEC", "120"))
+MAX_BOOK_AGE_MS = int(os.getenv("MAX_BOOK_AGE_MS", "90000"))
 # Signal edge / lag knobs. MIN_EDGE was the old combined knob; keep it as
 # a backward-compatible default for MIN_LAG only when MIN_LAG is unset.
-MIN_LAG = float(os.getenv("MIN_LAG", os.getenv("MIN_EDGE", "0.08")))
-MIN_EXECUTABLE_EDGE = float(os.getenv("MIN_EXECUTABLE_EDGE", "0.03"))
+MIN_LAG = float(os.getenv("MIN_LAG", os.getenv("MIN_EDGE", "0.05")))
+MIN_EXECUTABLE_EDGE = float(os.getenv("MIN_EXECUTABLE_EDGE", "0.01"))
 MIN_ML_EDGE = float(os.getenv("MIN_ML_EDGE", "0.10"))
 ML_STRATEGY_ENABLED = os.getenv("ML_STRATEGY_ENABLED", "false").lower() in {"1", "true", "yes"}
 PRICE_LOOKBACK_SEC = float(os.getenv("PRICE_LOOKBACK_SEC", "10"))
@@ -183,3 +183,4 @@ def _config_hash() -> str:
 
 
 CONFIG_HASH = _config_hash()
+()

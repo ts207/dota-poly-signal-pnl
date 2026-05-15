@@ -40,11 +40,11 @@ ACTIVE_EVENTS: dict[str, EventSpec] = {
 
     "POLL_ULTRA_LATE_FIGHT_FLIP": EventSpec(0.24, 0.52, 4.0),
     "POLL_STOMP_THROW_CONFIRMED": EventSpec(0.16, 0.36, 8.0),
-    "POLL_LATE_FIGHT_FLIP":       EventSpec(0.15, 0.36, 5.0),
-    "POLL_LEAD_FLIP_WITH_KILLS":  EventSpec(0.13, 0.30, 7.0),
+    "POLL_LATE_FIGHT_FLIP":       EventSpec(0.18, 0.42, 5.0),
+    "POLL_LEAD_FLIP_WITH_KILLS":  EventSpec(0.16, 0.35, 7.0),
     "POLL_MAJOR_COMEBACK_RECOVERY": EventSpec(0.12, 0.28, 10.0),
     "POLL_KILL_BURST_CONFIRMED":  EventSpec(0.10, 0.24, 6.0),
-    "POLL_FIGHT_SWING":           EventSpec(0.085, 0.18, 6.0),
+    "POLL_FIGHT_SWING":           EventSpec(0.11, 0.22, 6.0),
     "POLL_COMEBACK_RECOVERY":     EventSpec(0.075, 0.18, 10.0),
 }
 
@@ -71,9 +71,9 @@ _EVENT_MAX_FILL: dict[str, float] = {
     "THRONE_EXPOSED": 0.97,
     "BASE_PRESSURE_T4": 0.92,
     "BASE_PRESSURE_T3_COLLAPSE": 0.86,
-    "POLL_ULTRA_LATE_FIGHT_FLIP": 0.90,
+    "POLL_ULTRA_LATE_FIGHT_FLIP": 0.94,
     "POLL_STOMP_THROW_CONFIRMED": 0.82,
-    "POLL_LATE_FIGHT_FLIP": 0.86,
+    "POLL_LATE_FIGHT_FLIP": 0.90,
     "POLL_LEAD_FLIP_WITH_KILLS": 0.84,
     "POLL_MAJOR_COMEBACK_RECOVERY": 0.82,
     "POLL_KILL_BURST_CONFIRMED": 0.84,
@@ -561,18 +561,18 @@ class EventSignalEngine:
             return {"decision": "skip", "reason": "no_price_history", **base_metadata}
 
         # 1. Repricing check: if the market already moved significantly in the
-        # last 30s (Steam's typical delay window), the edge is likely gone.
-        anchor_30s = self._price_n_seconds_ago(token_id, 30)
-        if anchor_30s is not None:
-            recent_repriced_move = current_price - anchor_30s
-            # If the market moved > 75% of MIN_LAG in the event's direction, skip.
-            if recent_repriced_move > (MIN_LAG * 0.75):
+        # last 5s, the edge is likely gone.
+        anchor_5s = self._price_n_seconds_ago(token_id, 5)
+        if anchor_5s is not None:
+            recent_repriced_move = current_price - anchor_5s
+            # If the market moved > 1.5x of MIN_LAG in the event's direction, skip.
+            if recent_repriced_move > (MIN_LAG * 1.5):
                 return {
                     "decision": "skip", "reason": "already_repriced",
                     **base_metadata,
-                    "move_30s": round(recent_repriced_move, 4),
+                    "move_5s": round(recent_repriced_move, 4),
                     "current_price": round(current_price, 4),
-                    "anchor_30s": round(anchor_30s, 4),
+                    "anchor_5s": round(anchor_5s, 4),
                 }
 
         anchor_price = self._price_n_seconds_ago(token_id, PRICE_LOOKBACK_SEC)
@@ -818,9 +818,9 @@ class EventSignalEngine:
         if "POLL_STOMP_THROW_CONFIRMED" in event_types:
             return 0.40
         if "POLL_LATE_FIGHT_FLIP" in event_types:
-            return 0.36
+            return 0.45
         if "POLL_LEAD_FLIP_WITH_KILLS" in event_types or "POLL_MAJOR_COMEBACK_RECOVERY" in event_types:
-            return 0.34
+            return 0.40
         if "BASE_PRESSURE_T3_COLLAPSE" in event_types:
             return 0.32
         if "POLL_KILL_BURST_CONFIRMED" in event_types:
